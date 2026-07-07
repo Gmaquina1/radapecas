@@ -1,58 +1,30 @@
 # Radar Pecas
 
-Prototipo de app web para buscar pecas por foto, codigo e dados da maquina/veiculo.
+Versao: v1.4.0-funcional
 
 ## Como testar
 
-1. Abra `index.html` no navegador.
+1. Abra `index.html`.
 2. Clique em `Enviar ou tirar foto da peca`.
-3. Envie uma foto do codigo, etiqueta, embalagem ou placa da peca.
-4. Clique em `Ler codigo da foto`.
-5. Confira o codigo sugerido e clique em `Montar buscas`.
+3. Envie foto do codigo, etiqueta, embalagem ou placa da peca.
+4. Clique em `Reconhecer foto`.
+5. Se o codigo nao aparecer, preencha codigo, nome da peca, marca ou maquina.
+6. Clique em `Buscar peca`.
 
-## O que ja funciona
+## O que funciona nesta versao
 
-- Leitura de codigo por OCR no navegador usando Tesseract.js.
-- Analise visual sem chave usando modelo gratuito no navegador quando disponivel.
-- Tentativa de leitura de codigo de barras quando o navegador suporta `BarcodeDetector`.
-- Campo manual para corrigir codigo, marca, maquina, cidade e tipo da peca.
-- Links de busca para Google, Google Shopping, Mercado Livre, OLX e Shopee.
-- Busca tecnica por catalogo PDF/manual.
-- Busca focada em peca usada/remanufaturada.
-- Cadastro local de fornecedores alvo por dominio.
-- Historico local das ultimas buscas.
-- Botao para copiar mensagem de pedido para WhatsApp.
+- Botao `Reconhecer foto`.
+- Leitura de codigo por OCR no navegador.
+- Segunda leitura automatica com contraste alto para melhorar codigo em etiqueta.
+- Tentativa de leitura de codigo de barras quando o navegador suporta.
+- Campos manuais para corrigir a busca.
+- Links reais de compra/pesquisa para:
+  - peca nova;
+  - peca usada;
+  - remanufaturada.
+- Versao visivel na tela.
+- Botao para copiar pedido de cotacao.
 
-## Modo para captar recurso
+## Observacao
 
-Esta versao serve para apresentar a ideia sem custo de API:
-
-- mostra a experiencia no celular por link;
-- roda OCR sem chave;
-- tenta uma classificacao visual local;
-- monta buscas automaticas;
-- deixa claro que a precisao alta depende de investimento em base de fotos, fornecedores e IA profissional.
-
-## Importante
-
-Este prototipo abre buscas prontas na internet. Para ele procurar automaticamente em fornecedores e trazer resultados dentro da tela, a proxima versao precisa de um servidor/API para:
-
-- consultar fornecedores cadastrados;
-- salvar pedidos de busca;
-- receber resposta de lojistas;
-- integrar APIs de marketplaces;
-- enviar alertas por WhatsApp ou e-mail;
-- guardar fotos e historico em nuvem.
-
-## Melhor uso
-
-O melhor nicho para este app e peca de:
-
-- maquina pesada;
-- caminhao e linha diesel;
-- trator e implemento;
-- peca hidraulica;
-- peca dificil de achar;
-- item usado/remanufaturado.
-
-Maquina parada da prejuizo. O valor do app esta em reduzir o tempo de procura.
+Sem backend e sem API paga, o HTML nao consegue identificar qualquer peca apenas pelo formato da foto com precisao profissional. O fluxo mais confiavel para teste e reconhecer codigo/etiqueta da peca e montar os links de compra automaticamente.
