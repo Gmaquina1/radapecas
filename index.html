@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Radar Pecas</title>
+  <meta name="theme-color" content="#111827">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">G MAQUINA apresenta</p>
+        <h1>Radar Pecas</h1>
+        <p class="subtitle">Tire foto do codigo, confirme a peca e abra buscas prontas em fornecedores.</p>
+      </div>
+      <div class="status-pill">
+        <span class="dot"></span>
+        Prototipo
+      </div>
+    </header>
+
+    <section class="hero-panel">
+      <div class="scan-card">
+        <div class="scan-head">
+          <div>
+            <h2>Reconhecimento por foto</h2>
+            <p>Funciona melhor com codigo limpo, boa luz e foto de perto.</p>
+          </div>
+          <button class="ghost-btn" id="resetBtn" type="button">Limpar</button>
+        </div>
+
+        <label class="drop-zone" for="photoInput" id="dropZone">
+          <input id="photoInput" type="file" accept="image/*" capture="environment">
+          <span class="camera-mark">CAM</span>
+          <strong>Enviar ou tirar foto da peca</strong>
+          <small>Codigo gravado, etiqueta, embalagem ou placa da peca.</small>
+        </label>
+
+        <div class="preview-wrap is-hidden" id="previewWrap">
+          <canvas id="previewCanvas"></canvas>
+          <div class="preview-actions">
+            <button class="primary-btn" id="runOcrBtn" type="button">Ler codigo da foto</button>
+            <button class="secondary-btn" id="enhanceBtn" type="button">Melhorar contraste</button>
+          </div>
+        </div>
+
+        <div class="progress-box" id="progressBox">
+          <div class="progress-line">
+            <span id="progressText">Aguardando foto</span>
+            <span id="progressPercent">0%</span>
+          </div>
+          <div class="bar"><span id="progressBar"></span></div>
+        </div>
+      </div>
+
+      <form class="search-card" id="partsForm">
+        <h2>Dados para busca</h2>
+
+        <label>
+          Codigo da peca
+          <input id="partCode" type="text" placeholder="Ex: 84217229, 1234567, 320/07047">
+        </label>
+
+        <div class="candidate-list" id="candidateList"></div>
+
+        <label>
+          Nome ou tipo da peca
+          <input id="partName" type="text" placeholder="Ex: bomba hidraulica, filtro, comando, modulo">
+        </label>
+
+        <div class="grid-2">
+          <label>
+            Marca
+            <input id="brand" type="text" placeholder="Ex: JCB, Volvo, New Holland">
+          </label>
+          <label>
+            Maquina / veiculo
+            <input id="machine" type="text" placeholder="Ex: RG140B, 3CX, W170B">
+          </label>
+        </div>
+
+        <div class="grid-2">
+          <label>
+            Cidade / UF
+            <input id="location" type="text" placeholder="Ex: Taiobeiras MG">
+          </label>
+          <label>
+            Tipo
+            <select id="partType">
+              <option value="">Qualquer tipo</option>
+              <option value="original">Original</option>
+              <option value="paralela">Paralela</option>
+              <option value="usada">Usada</option>
+              <option value="remanufaturada">Remanufaturada</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="button-row">
+          <button class="primary-btn" type="submit">Montar buscas</button>
+          <button class="secondary-btn" id="copyRequestBtn" type="button">Copiar pedido</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="results-section">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">Buscas prontas</p>
+          <h2>Fornecedores e internet</h2>
+        </div>
+        <button class="ghost-btn" id="saveHistoryBtn" type="button">Salvar busca</button>
+      </div>
+
+      <div class="query-box">
+        <span>Consulta:</span>
+        <strong id="queryPreview">Preencha os dados para montar a busca.</strong>
+      </div>
+
+      <div class="results-grid" id="resultsGrid"></div>
+    </section>
+
+    <section class="supplier-section">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">Base propria</p>
+          <h2>Fornecedores alvo</h2>
+        </div>
+      </div>
+
+      <form class="supplier-form" id="supplierForm">
+        <input id="supplierName" type="text" placeholder="Nome do fornecedor">
+        <input id="supplierDomain" type="text" placeholder="Dominio. Ex: exemplo.com.br">
+        <button class="secondary-btn" type="submit">Adicionar</button>
+      </form>
+
+      <div class="supplier-list" id="supplierList"></div>
+    </section>
+
+    <section class="history-section">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">Memoria local</p>
+          <h2>Ultimas buscas</h2>
+        </div>
+        <button class="ghost-btn" id="clearHistoryBtn" type="button">Apagar</button>
+      </div>
+      <div class="history-list" id="historyList"></div>
+    </section>
+  </main>
+
+  <template id="resultTemplate">
+    <article class="result-card">
+      <div>
+        <p class="result-type"></p>
+        <h3></h3>
+        <p class="result-desc"></p>
+      </div>
+      <a target="_blank" rel="noopener">Abrir busca</a>
+    </article>
+  </template>
+
+  <script src="./app.js"></script>
+</body>
+</html>
