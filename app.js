@@ -1,4 +1,4 @@
-const APP_VERSION = "v2.0.1-diagnostico";
+const APP_VERSION = "v2.1.0-identificacao-visual";
 const TESSERACT_CDN = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
 const MARKETPLACE_API = "https://api.mercadolibre.com/sites/MLB/search";
 const VISION_AI_ENDPOINT = "/api/analyze-image";
@@ -225,6 +225,7 @@ function applyAiResult(result) {
   }
 
   if (!clean(els.partName.value) && clean(result.partName)) els.partName.value = clean(result.partName);
+  if (!clean(els.partName.value) && clean(result.partFamily)) els.partName.value = clean(result.partFamily);
   if (!clean(els.brand.value) && clean(result.brand)) els.brand.value = clean(result.brand);
   if (!clean(els.machine.value) && clean(result.applicationModel)) els.machine.value = clean(result.applicationModel);
 
@@ -241,7 +242,7 @@ function applyAiResult(result) {
   if (!hasAnyResult) {
     setAnalysis(
       "IA nao confirmou a peca",
-      clean(result.notes) || "A foto nao trouxe informacao suficiente para uma busca confiavel.",
+      clean(result.visualDescription) || clean(result.notes) || "A foto nao trouxe informacao suficiente para uma busca confiavel.",
       confidenceFromAi(result),
       ["foto inconclusiva", "preencha dados"]
     );
@@ -250,7 +251,7 @@ function applyAiResult(result) {
 
   setAnalysis(
     clean(result.partName) || clean(result.partCode) || "Peca identificada por IA",
-    clean(result.notes) || "IA de visao analisou a foto e extraiu os dados principais.",
+    clean(result.visualDescription) || clean(result.notes) || "IA de visao analisou a foto e extraiu os dados principais.",
     confidenceFromAi(result),
     buildAiTags(result)
   );
@@ -308,10 +309,12 @@ function confidenceFromAi(result) {
 function buildAiTags(result) {
   return [
     clean(result.partCode) ? `codigo ${clean(result.partCode)}` : "codigo a confirmar",
+    clean(result.partFamily) || "",
     clean(result.segment) || selectedSegmentText() || "segmento geral",
     clean(result.condition) || "condicao a confirmar",
+    ...(Array.isArray(result.visualFeatures) ? result.visualFeatures.slice(0, 2).map(clean).filter(Boolean) : []),
     ...(Array.isArray(result.searchTerms) ? result.searchTerms.slice(0, 2).map(clean).filter(Boolean) : [])
-  ];
+  ].filter(Boolean);
 }
 
 async function recognizePhoto() {
@@ -760,7 +763,8 @@ function buildRelevanceTerms() {
     clean(els.partName.value),
     clean(els.brand.value),
     clean(els.machine.value),
-    selectedSegmentText()
+    selectedSegmentText(),
+    visualSearchTerms().join(" ")
   ].join(" ");
 
   const blocked = new Set(["peca", "pecas", "codigo", "original", "paralela", "comprar", "para", "com"]);
@@ -844,8 +848,21 @@ function baseSearchText() {
     clean(els.partName.value),
     clean(els.brand.value),
     clean(els.machine.value),
-    selectedSegmentText()
+    selectedSegmentText(),
+    ...visualSearchTerms()
   ].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+}
+
+function visualSearchTerms() {
+  const result = state.lastAiResult || {};
+  return [
+    clean(result.partFamily),
+    ...(Array.isArray(result.searchTerms) ? result.searchTerms.map(clean) : []),
+    ...(Array.isArray(result.visualFeatures) ? result.visualFeatures.map(clean) : [])
+  ]
+    .filter(Boolean)
+    .filter((item, index, list) => list.indexOf(item) === index)
+    .slice(0, 4);
 }
 
 function updateQueryPreview() {

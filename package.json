@@ -1,6 +1,6 @@
 {
   "name": "radar-pecas",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "private": true,
   "description": "Radar Pecas com IA de visao para identificar pecas por foto.",
   "scripts": {

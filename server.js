@@ -9,7 +9,7 @@ loadEnvFile(path.join(ROOT, ".env"));
 const RAW_OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_API_KEY = RAW_OPENAI_API_KEY.includes("coloque_sua_chave") ? "" : RAW_OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.5";
-const APP_VERSION = "v2.0.1-diagnostico";
+const APP_VERSION = "v2.1.0-identificacao-visual";
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
 const MIME_TYPES = {
@@ -106,10 +106,13 @@ async function callVisionModel({ imageDataUrl, fileName, context }) {
         {
           role: "system",
           content: [
-            "Voce e uma IA especialista em identificar pecas por foto para cotacao.",
-            "A peca pode ser automotiva, moto, caminhao, maquina, agricola, eletrodomestico, industrial, eletrica, eletronica ou hidraulica.",
-            "Extraia somente informacoes visiveis ou fortemente inferidas. Nao invente codigo, marca ou modelo.",
-            "Se nao tiver certeza, use null e reduza a confianca.",
+            "Voce e uma IA especialista em reconhecimento visual de pecas para compra e cotacao.",
+            "Sua prioridade numero 1 e identificar que objeto/peca aparece na foto, mesmo quando nao existe codigo visivel.",
+            "Depois procure codigos, marca, etiqueta, QR/barcode, aplicacao e sinais de condicao.",
+            "Classifique o segmento somente entre: automotiva, moto, caminhao, maquina, eletrodomestico, industrial, eletrica, eletronica ou hidraulica. Se nao couber bem, use null.",
+            "Quando nao houver codigo, informe o nome visual provavel da peca e termos de busca uteis.",
+            "Nao invente codigo, marca ou modelo. Para codigo/marca/modelo use null quando nao estiver visivel.",
+            "Para nome da peca, use o melhor palpite visual e reduza a confianca se estiver incerto.",
             "Responda em portugues do Brasil."
           ].join(" ")
         },
@@ -156,9 +159,11 @@ async function callVisionModel({ imageDataUrl, fileName, context }) {
 function buildPrompt(fileName, context) {
   return [
     "Analise a imagem da peca e extraia os dados para busca de compra.",
-    "Procure codigos gravados, etiqueta, QR/barcode, marca, nome da peca, aplicacao/modelo e segmento.",
+    "Primeiro identifique visualmente o que e a peca: formato, material, conectores, furos, engrenagens, placa, carcaca, bico, bomba, sensor, valvula, filtro, rolamento, mangueira, motor, fonte, modulo ou outro objeto.",
+    "Depois procure codigos gravados, etiqueta, QR/barcode, marca, nome da peca, aplicacao/modelo e segmento.",
+    "Se nao existir codigo legivel, monte searchTerms com nome visual da peca, familia, segmento e caracteristicas visiveis.",
     "Classifique a condicao apenas se houver sinal claro: original, paralela, usada ou remanufaturada.",
-    "Se for uma foto sem codigo legivel, descreva a peca provavel e reduza a confianca.",
+    "Se for uma foto sem codigo legivel, ainda assim identifique a peca provavel pela aparencia e reduza a confianca.",
     "",
     `Arquivo: ${fileName || "nao informado"}`,
     `Dados ja informados pelo usuario: ${JSON.stringify(context || {})}`
@@ -173,6 +178,9 @@ function partSchema() {
       "partCode",
       "alternativeCodes",
       "partName",
+      "partFamily",
+      "visualDescription",
+      "visualFeatures",
       "brand",
       "applicationModel",
       "segment",
@@ -189,7 +197,14 @@ function partSchema() {
         items: { type: "string" },
         description: "Outros codigos ou referencias visiveis."
       },
-      partName: { type: ["string", "null"], description: "Nome provavel da peca." },
+      partName: { type: ["string", "null"], description: "Nome visual provavel da peca, mesmo sem codigo. Ex: bico injetor, sensor, rolamento, placa eletronica, filtro, bomba, valvula." },
+      partFamily: { type: ["string", "null"], description: "Familia ou categoria visual da peca. Ex: sensor, bico, bomba, placa, filtro, rolamento, mangueira, modulo, motor, conector." },
+      visualDescription: { type: ["string", "null"], description: "Descricao curta do que aparece fisicamente na imagem." },
+      visualFeatures: {
+        type: "array",
+        items: { type: "string" },
+        description: "Caracteristicas visiveis uteis para busca, como formato, conectores, furos, cor, material, etiqueta ou encaixes."
+      },
       brand: { type: ["string", "null"], description: "Marca da peca ou fabricante, se visivel." },
       applicationModel: { type: ["string", "null"], description: "Modelo/aplicacao compativel, se visivel ou inferido com confianca." },
       segment: {
@@ -230,6 +245,9 @@ function normalizeAiResult(result) {
     partCode: cleanNullable(result.partCode),
     alternativeCodes: Array.isArray(result.alternativeCodes) ? result.alternativeCodes.map(String).filter(Boolean).slice(0, 8) : [],
     partName: cleanNullable(result.partName),
+    partFamily: cleanNullable(result.partFamily),
+    visualDescription: cleanNullable(result.visualDescription),
+    visualFeatures: Array.isArray(result.visualFeatures) ? result.visualFeatures.map(String).filter(Boolean).slice(0, 8) : [],
     brand: cleanNullable(result.brand),
     applicationModel: cleanNullable(result.applicationModel),
     segment: cleanNullable(result.segment),

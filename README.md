@@ -1,6 +1,6 @@
 # Radar Pecas
 
-Versao: v2.0.1-diagnostico
+Versao: v2.1.0-identificacao-visual
 
 ## Como testar
 
@@ -18,6 +18,8 @@ Sem `OPENAI_API_KEY`, a tela ainda abre, mas usa apenas a leitura local por codi
 
 - Botao `Reconhecer com IA`.
 - Backend `server.js` com IA de visao real.
+- Identificacao visual da peca antes da leitura de codigo.
+- Busca por nome/familia visual quando nao existe codigo legivel.
 - Chave da IA protegida no servidor, fora do HTML.
 - Acesso separado para camera e galeria do celular.
 - Busca geral para pecas automotivas, moto, maquina, eletrodomestico, industrial, hidraulica, eletrica e eletronica.
