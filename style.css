@@ -267,7 +267,7 @@ select:focus {
 }
 
 button,
-.result-card a {
+.quote-btn {
   min-height: 42px;
   border: 0;
   border-radius: 8px;
@@ -434,7 +434,7 @@ button,
   text-transform: uppercase;
 }
 
-.result-card a {
+.quote-btn {
   display: inline-flex;
   width: fit-content;
   align-items: center;
@@ -442,10 +442,43 @@ button,
   color: #241500;
 }
 
+.match-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.match-chip {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 8px;
+  background: #f9fafb;
+}
+
+.match-chip span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.match-chip strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink);
+}
+
 .supplier-form {
   display: grid;
   grid-template-columns: 1fr 1fr auto;
   gap: 10px;
+}
+
+.supplier-section,
+.history-section {
+  display: none;
 }
 
 .supplier-list,
@@ -488,6 +521,7 @@ button,
   .grid-2,
   .results-grid,
   .ai-grid,
+  .match-row,
   .supplier-form {
     grid-template-columns: 1fr;
   }

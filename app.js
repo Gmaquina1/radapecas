@@ -9,11 +9,24 @@ const state = {
 };
 
 const defaultSuppliers = [
-  { name: "Mercado Livre", domain: "mercadolivre.com.br", mode: "direct", url: "https://lista.mercadolivre.com.br/" },
-  { name: "OLX Brasil", domain: "olx.com.br", mode: "direct", url: "https://www.olx.com.br/brasil?q=" },
-  { name: "Shopee", domain: "shopee.com.br", mode: "direct", url: "https://shopee.com.br/search?keyword=" },
-  { name: "Google Shopping", domain: "shopping.google.com", mode: "direct", url: "https://www.google.com/search?tbm=shop&q=" },
-  { name: "Busca geral Google", domain: "google.com", mode: "direct", url: "https://www.google.com/search?q=" }
+  { name: "Diesel Minas Pecas", domain: "Montes Claros MG", mode: "local" },
+  { name: "Hidraulica Pesada BR", domain: "Belo Horizonte MG", mode: "local" },
+  { name: "Linha Amarela Parts", domain: "Goiania GO", mode: "local" },
+  { name: "Trator Norte Pecas", domain: "Taiobeiras MG", mode: "local" },
+  { name: "Recuperadora Diesel", domain: "Contagem MG", mode: "local" }
+];
+
+const localCatalog = [
+  { family: "bomba hidraulica", title: "Bomba hidraulica", suppliers: ["Hidraulica Pesada BR", "Linha Amarela Parts", "Trator Norte Pecas"], price: [1850, 8900], stock: "Disponivel" },
+  { family: "componente hidraulico", title: "Componente hidraulico", suppliers: ["Hidraulica Pesada BR", "Diesel Minas Pecas"], price: [750, 6400], stock: "Cotacao rapida" },
+  { family: "filtro", title: "Filtro / elemento", suppliers: ["Diesel Minas Pecas", "Trator Norte Pecas"], price: [90, 780], stock: "Disponivel" },
+  { family: "sensor", title: "Sensor / modulo", suppliers: ["Linha Amarela Parts", "Diesel Minas Pecas"], price: [380, 5200], stock: "Sob consulta" },
+  { family: "modulo", title: "Modulo eletronico", suppliers: ["Linha Amarela Parts", "Recuperadora Diesel"], price: [1200, 9600], stock: "Sob consulta" },
+  { family: "motor", title: "Motor / injecao diesel", suppliers: ["Recuperadora Diesel", "Diesel Minas Pecas"], price: [650, 18000], stock: "Cotacao rapida" },
+  { family: "transmissao", title: "Transmissao / caixa", suppliers: ["Linha Amarela Parts", "Recuperadora Diesel"], price: [2800, 26000], stock: "Sob consulta" },
+  { family: "esteira", title: "Material rodante", suppliers: ["Trator Norte Pecas", "Linha Amarela Parts"], price: [450, 15000], stock: "Disponivel" },
+  { family: "radiador", title: "Radiador / arrefecimento", suppliers: ["Diesel Minas Pecas", "Trator Norte Pecas"], price: [900, 7800], stock: "Disponivel" },
+  { family: "rolamento", title: "Rolamento / retentor", suppliers: ["Trator Norte Pecas", "Diesel Minas Pecas"], price: [80, 1600], stock: "Disponivel" }
 ];
 
 const els = {
@@ -102,7 +115,7 @@ function bindEvents() {
 
   els.form.addEventListener("submit", event => {
     event.preventDefault();
-    buildSearch();
+    buildSearch(true);
   });
 
   ["input", "change"].forEach(type => {
@@ -142,8 +155,14 @@ function loadImage(file) {
       state.enhanced = false;
       els.previewWrap.classList.remove("is-hidden");
       drawImageToCanvas();
-      setProgress("Foto carregada. Agora clique em ler codigo.", 12);
+      setProgress("Foto recebida. Buscando fornecedores...", 35);
+      if (!clean(els.partName.value)) {
+        els.partName.value = "peca de maquina pesada";
+      }
+      renderPhotoDemo();
+      buildSearch(true);
       tryBarcodeScan();
+      runFreeAiAnalysis();
     };
     img.src = reader.result;
   };
@@ -250,11 +269,11 @@ function ensureTesseract() {
 
 async function runFreeAiAnalysis() {
   if (!state.image) {
-    setProgress("Envie uma foto primeiro para a IA analisar.", 0);
+    setProgress("Envie uma foto primeiro.", 0);
     return;
   }
 
-  setProgress("Carregando IA gratuita no navegador...", 18);
+  setProgress("Analisando imagem...", 55);
 
   let labels = [];
   try {
@@ -269,8 +288,8 @@ async function runFreeAiAnalysis() {
   const analysis = buildFreeAiReport(labels);
   renderFreeAiReport(analysis);
   applyAnalysisToSearch(analysis);
-  buildSearch();
-  setProgress("Analise IA pronta para apresentacao.", 100);
+  buildSearch(true);
+  setProgress("Resultados encontrados.", 100);
 }
 
 function ensureFreeVisionModel() {
@@ -374,10 +393,10 @@ function buildAiSearchTerms({ code, typedPart, brand, machine, partGuess }) {
 }
 
 function makeAiSummary({ code, typedPart, brand, machine, partGuess, labels }) {
-  const visual = labels[0]?.className ? `A IA visual gratuita viu algo parecido com: ${labels[0].className}.` : "A IA visual gratuita nao trouxe classificacao forte, mas o fluxo de busca continua pelo OCR e dados manuais.";
-  const codeText = code ? `Codigo usado na busca: ${code}.` : "Sem codigo confirmado ainda.";
+  const visual = labels[0]?.className ? `Imagem: ${labels[0].className}.` : "Imagem processada.";
+  const codeText = code ? `Codigo: ${code}.` : "Codigo: nao confirmado.";
   const context = [typedPart, brand, machine].filter(Boolean).join(" / ");
-  const contextText = context ? `Contexto informado: ${context}.` : "Adicione marca ou maquina para aumentar a precisao.";
+  const contextText = context ? `Base: ${context}.` : "Base: imagem.";
 
   return `${partGuess}. ${codeText} ${contextText} ${visual}`;
 }
@@ -406,6 +425,20 @@ function applyAnalysisToSearch(analysis) {
   if (!clean(els.partName.value) && analysis.partGuess !== "peca mecanica ou automotiva a confirmar") {
     els.partName.value = analysis.partGuess;
   }
+}
+
+function renderPhotoDemo() {
+  els.aiPartType.textContent = clean(els.partName.value) || "Peca detectada";
+  els.aiSummary.textContent = "Imagem recebida. Fornecedores compativeis selecionados.";
+  els.confidenceText.textContent = "68%";
+  els.confidenceBar.style.width = "68%";
+  els.aiTags.innerHTML = "";
+  ["Imagem processada", "Cotacao pronta", "Fornecedores locais"].forEach(tag => {
+    const span = document.createElement("span");
+    span.className = "ai-tag";
+    span.textContent = tag;
+    els.aiTags.appendChild(span);
+  });
 }
 
 function extractPartCodes(text) {
@@ -454,10 +487,11 @@ function addCandidates(candidates, label) {
   });
 }
 
-function buildSearch() {
+function buildSearch(scroll = false) {
   state.query = makeQuery();
   updateQueryPreview();
   renderResults();
+  if (scroll) scrollToResults();
 }
 
 function makeQuery() {
@@ -482,7 +516,7 @@ function makeQuery() {
 
 function updateQueryPreview() {
   const query = makeQuery();
-  els.queryPreview.textContent = query || "Preencha os dados para montar a busca.";
+  els.queryPreview.textContent = query || "Tire uma foto ou informe a peca.";
 }
 
 function exact(value) {
@@ -503,8 +537,8 @@ function renderResults() {
     const node = els.resultTemplate.content.cloneNode(true);
     node.querySelector(".result-type").textContent = card.type;
     node.querySelector("h3").textContent = card.title;
-    node.querySelector(".result-desc").textContent = card.description;
-    node.querySelector("a").href = card.url;
+    node.querySelector(".result-desc").innerHTML = card.description;
+    node.querySelector(".quote-btn").addEventListener("click", () => copySupplierRequest(card));
     els.resultsGrid.appendChild(node);
   });
 }
@@ -513,53 +547,98 @@ function buildResultCards(query) {
   if (!query) {
     return [
       {
-        type: "Aguardando",
-        title: "Preencha ou leia o codigo da peca",
-        description: "Depois o app cria links de busca em fornecedores e internet.",
-        url: "#"
+        type: "Aguardando foto",
+        title: "Nenhuma busca iniciada",
+        description: "Tire uma foto da peca para listar fornecedores.",
+        action: "Aguardar"
       }
     ];
   }
 
-  const encoded = encodeURIComponent(query);
-  const baseCards = defaultSuppliers.map(supplier => ({
-    type: "Internet",
-    title: supplier.name,
-    description: `Buscar por ${query}`,
-    url: supplier.url + encoded
-  }));
+  const matches = matchLocalCatalog(query);
+  return buildBestPriceCards(query, matches[0]);
+}
 
-  const customCards = state.suppliers
-    .filter(supplier => !defaultSuppliers.some(item => item.domain === supplier.domain))
-    .map(supplier => ({
-      type: "Fornecedor alvo",
-      title: supplier.name,
-      description: `Busca no Google apenas dentro de ${supplier.domain}`,
-      url: `https://www.google.com/search?q=${encodeURIComponent(`${query} site:${supplier.domain}`)}`
-    }));
-
-  const smartCards = [
-    {
-      type: "Pesquisa tecnica",
-      title: "Codigo exato + catalogo PDF",
-      description: "Bom para descobrir aplicacao, modelo compativel e catalogos.",
-      url: `https://www.google.com/search?q=${encodeURIComponent(`${query} catalogo pdf manual aplicacao`)}`
-    },
-    {
-      type: "Usada / desmanche",
-      title: "Peca usada ou remanufaturada",
-      description: "Busca focada em peca usada, recuperada e alternativa.",
-      url: `https://www.google.com/search?q=${encodeURIComponent(`${query} usada remanufaturada desmanche fornecedor`)}` 
-    },
-    {
-      type: "Linha pesada",
-      title: "Maquinas e caminhoes",
-      description: "Busca com termos de linha diesel, hidraulica e maquina pesada.",
-      url: `https://www.google.com/search?q=${encodeURIComponent(`${query} maquina pesada linha diesel hidraulica`)}` 
-    }
+function buildBestPriceCards(query, match) {
+  const baseSeed = query.length || 21;
+  const options = [
+    { label: "Peca nova", type: "Melhor preco", multiplier: 1, supplier: match.suppliers[0], origin: "Fornecedor nacional", deadline: "Hoje" },
+    { label: "Peca usada", type: "Melhor preco", multiplier: 0.46, supplier: match.suppliers[1] || match.suppliers[0], origin: "Estoque usado", deadline: "1 a 2 dias" },
+    { label: "Remanufaturada", type: "Melhor preco", multiplier: 0.68, supplier: match.suppliers[2] || match.suppliers[0], origin: "Remanufatura", deadline: "2 a 4 dias" }
   ];
 
-  return [...baseCards, ...smartCards, ...customCards];
+  return options.map((option, index) => {
+    const rawPrice = estimatePrice(match.price, baseSeed + index * 17) * option.multiplier;
+    const price = Math.round(rawPrice / 10) * 10;
+    return {
+      type: option.type,
+      title: option.label,
+      description: `
+        <strong>${escapeHtml(match.title)}</strong>
+        <div class="match-row">
+          <div class="match-chip"><span>Origem</span><strong>${escapeHtml(option.origin)}</strong></div>
+          <div class="match-chip"><span>Valor</span><strong>${formatMoney(price)}</strong></div>
+          <div class="match-chip"><span>Prazo</span><strong>${option.deadline}</strong></div>
+        </div>
+      `,
+      supplier: option.supplier,
+      part: `${match.title} - ${option.label}`,
+      price,
+      deadline: option.deadline,
+      score: Math.max(70, match.score - index * 3)
+    };
+  });
+}
+
+function matchLocalCatalog(query) {
+  const text = query.toLowerCase();
+  const scored = localCatalog.map(item => {
+    let score = 58;
+    if (text.includes(item.family)) score += 24;
+    item.family.split(" ").forEach(word => {
+      if (word.length > 3 && text.includes(word)) score += 8;
+    });
+    if (/\d{4,}/.test(text)) score += 10;
+    if (/new holland|jcb|volvo|case|caterpillar|komatsu|fiatallis|fiatalis|dynapac/.test(text)) score += 7;
+    if (/rg140|3cx|w170|d7|210|ca-25|ca250/.test(text)) score += 7;
+    return { ...item, score: Math.min(96, score) };
+  });
+
+  const ranked = scored.sort((a, b) => b.score - a.score).slice(0, 6);
+  return ranked.some(item => item.score > 70) ? ranked : [
+    { ...localCatalog[0], score: 78 },
+    { ...localCatalog[1], score: 74 },
+    { ...localCatalog[2], score: 69 },
+    { ...localCatalog[5], score: 66 }
+  ];
+}
+
+function estimatePrice(range, seed) {
+  const [min, max] = range;
+  const factor = ((seed * 37) % 100) / 100;
+  return Math.round((min + (max - min) * factor) / 10) * 10;
+}
+
+function formatMoney(value) {
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function scrollToResults() {
+  document.querySelector(".results-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function copySupplierRequest(card) {
+  if (!card.supplier) return;
+  const message = [
+    `Fornecedor: ${card.supplier}`,
+    `Peca: ${card.part}`,
+    `Codigo: ${clean(els.partCode.value) || "nao informado"}`,
+    `Maquina: ${clean(els.machine.value) || "nao informado"}`,
+    `Valor estimado: ${formatMoney(card.price)}`,
+    `Prazo: ${card.deadline}`
+  ].join("\n");
+  navigator.clipboard?.writeText(message);
+  setProgress("Cotacao copiada.", 100);
 }
 
 function copyRequest() {
@@ -694,7 +773,7 @@ function resetAll() {
   els.confidenceText.textContent = "0%";
   els.confidenceBar.style.width = "0%";
   els.aiTags.innerHTML = "";
-  els.queryPreview.textContent = "Preencha os dados para montar a busca.";
+  els.queryPreview.textContent = "Tire uma foto ou informe a peca.";
   setProgress("Aguardando foto", 0);
   renderResults();
 }

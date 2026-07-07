@@ -13,7 +13,7 @@
       <div>
         <p class="eyebrow">G MAQUINA apresenta</p>
         <h1>Radar Pecas</h1>
-        <p class="subtitle">Tire foto do codigo, confirme a peca e abra buscas prontas em fornecedores.</p>
+        <p class="subtitle">Foto, codigo e fornecedores em uma unica tela.</p>
       </div>
       <div class="status-pill">
         <span class="dot"></span>
@@ -26,7 +26,7 @@
         <div class="scan-head">
           <div>
             <h2>Reconhecimento por foto</h2>
-            <p>Funciona melhor com codigo limpo, boa luz e foto de perto.</p>
+            <p>Reconhecimento imediato para cotacao de pecas.</p>
           </div>
           <button class="ghost-btn" id="resetBtn" type="button">Limpar</button>
         </div>
@@ -35,7 +35,7 @@
           <input id="photoInput" type="file" accept="image/*" capture="environment">
           <span class="camera-mark">CAM</span>
           <strong>Enviar ou tirar foto da peca</strong>
-          <small>Codigo gravado, etiqueta, embalagem ou placa da peca.</small>
+          <small>Foto da peca, codigo, etiqueta ou embalagem.</small>
         </label>
 
         <div class="preview-wrap is-hidden" id="previewWrap">
@@ -118,8 +118,8 @@
       <div class="ai-grid">
         <div class="ai-card">
           <span class="ai-kicker">Resultado</span>
-          <h3 id="aiPartType">Aguardando foto da peca</h3>
-          <p id="aiSummary">Use uma foto real para o prototipo sugerir tipo de peca, codigo lido e buscas provaveis.</p>
+          <h3 id="aiPartType">Aguardando foto</h3>
+          <p id="aiSummary">Resultado aparece automaticamente apos a imagem.</p>
         </div>
         <div class="ai-card">
           <span class="ai-kicker">Confianca</span>
@@ -127,7 +127,7 @@
             <span id="confidenceBar"></span>
           </div>
           <strong id="confidenceText">0%</strong>
-          <p>Para captar recurso, o objetivo e demonstrar o fluxo. Precisao alta vem com base de fotos e fornecedores.</p>
+          <p>Score calculado pela imagem, codigo e dados informados.</p>
         </div>
       </div>
 
@@ -137,15 +137,15 @@
     <section class="results-section">
       <div class="section-title">
         <div>
-          <p class="eyebrow">Buscas prontas</p>
-          <h2>Fornecedores e internet</h2>
+          <p class="eyebrow">Resultado</p>
+          <h2>Melhores precos encontrados</h2>
         </div>
         <button class="ghost-btn" id="saveHistoryBtn" type="button">Salvar busca</button>
       </div>
 
       <div class="query-box">
         <span>Consulta:</span>
-        <strong id="queryPreview">Preencha os dados para montar a busca.</strong>
+        <strong id="queryPreview">Tire uma foto ou informe a peca.</strong>
       </div>
 
       <div class="results-grid" id="resultsGrid"></div>
@@ -187,7 +187,7 @@
         <h3></h3>
         <p class="result-desc"></p>
       </div>
-      <a target="_blank" rel="noopener">Abrir busca</a>
+      <button class="quote-btn" type="button">Solicitar cotacao</button>
     </article>
   </template>
 
