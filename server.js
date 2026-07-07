@@ -9,7 +9,8 @@ loadEnvFile(path.join(ROOT, ".env"));
 const RAW_OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_API_KEY = RAW_OPENAI_API_KEY.includes("coloque_sua_chave") ? "" : RAW_OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.5";
-const APP_VERSION = "v2.1.0-identificacao-visual";
+const APP_VERSION = "v2.3.0-busca-servidor";
+const MARKETPLACE_API = "https://api.mercadolibre.com/sites/MLB/search";
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
 const MIME_TYPES = {
@@ -39,6 +40,11 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/analyze-image") {
       await handleAnalyzeImage(req, res);
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/search-offers") {
+      await handleSearchOffers(url, res);
       return;
     }
 
@@ -85,11 +91,56 @@ async function handleAnalyzeImage(req, res) {
       context: body.context || {}
     });
 
-    console.log(`[${new Date().toISOString()}] IA: sucesso em ${Date.now() - startedAt}ms`);
+    console.log(`[${new Date().toISOString()}] IA: sucesso em ${Date.now() - startedAt}ms | peca=${result.partName || "sem nome"} | familia=${result.partFamily || "sem familia"} | confianca=${result.confidence}`);
     sendJson(res, 200, { ok: true, result });
   } catch (error) {
     console.error(`[${new Date().toISOString()}] IA: falhou - ${error.message}`);
     sendJson(res, 502, { ok: false, error: "IA indisponivel.", detail: error.message });
+  }
+}
+
+async function handleSearchOffers(url, res) {
+  const query = String(url.searchParams.get("q") || "").trim();
+  const limit = Math.max(1, Math.min(50, Number(url.searchParams.get("limit") || 30)));
+
+  if (!query) {
+    sendJson(res, 400, { ok: false, error: "Consulta vazia." });
+    return;
+  }
+
+  try {
+    const apiUrl = `${MARKETPLACE_API}?q=${encodeURIComponent(query)}&limit=${limit}`;
+    console.log(`[${new Date().toISOString()}] Busca: ${query}`);
+    const response = await fetch(apiUrl, {
+      headers: {
+        "Accept": "application/json",
+        "User-Agent": "RadarPecas/2.3"
+      }
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      const detail = data?.message || data?.error || "Falha ao buscar ofertas.";
+      console.error(`[${new Date().toISOString()}] Busca: falhou - ${detail}`);
+      sendJson(res, 502, { ok: false, error: detail, results: [] });
+      return;
+    }
+
+    const results = (data.results || [])
+      .map(item => ({
+        title: item.title || "",
+        price: Number(item.price || 0),
+        url: item.permalink || "",
+        condition: item.condition || "",
+        thumbnail: item.thumbnail || ""
+      }))
+      .filter(offer => offer.title && offer.price > 0 && offer.url);
+
+    console.log(`[${new Date().toISOString()}] Busca: ${results.length} oferta(s) para "${query}"`);
+    sendJson(res, 200, { ok: true, results });
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] Busca: erro - ${error.message}`);
+    sendJson(res, 502, { ok: false, error: error.message, results: [] });
   }
 }
 
@@ -108,11 +159,12 @@ async function callVisionModel({ imageDataUrl, fileName, context }) {
           content: [
             "Voce e uma IA especialista em reconhecimento visual de pecas para compra e cotacao.",
             "Sua prioridade numero 1 e identificar que objeto/peca aparece na foto, mesmo quando nao existe codigo visivel.",
+            "Nunca deixe o nome visual da peca vazio. Se nao tiver certeza, informe o melhor palpite visual e reduza a confianca.",
             "Depois procure codigos, marca, etiqueta, QR/barcode, aplicacao e sinais de condicao.",
             "Classifique o segmento somente entre: automotiva, moto, caminhao, maquina, eletrodomestico, industrial, eletrica, eletronica ou hidraulica. Se nao couber bem, use null.",
-            "Quando nao houver codigo, informe o nome visual provavel da peca e termos de busca uteis.",
+            "Quando nao houver codigo, informe o nome visual provavel da peca, a familia visual e termos de busca uteis.",
             "Nao invente codigo, marca ou modelo. Para codigo/marca/modelo use null quando nao estiver visivel.",
-            "Para nome da peca, use o melhor palpite visual e reduza a confianca se estiver incerto.",
+            "Para nome da peca, use o melhor palpite visual e reduza a confianca se estiver incerto. Exemplos uteis: bico injetor, sensor de rotacao, rolamento, placa eletronica, modulo eletronico, bomba hidraulica, valvula solenoide, filtro, mangueira, engrenagem, conector, fonte, motor eletrico.",
             "Responda em portugues do Brasil."
           ].join(" ")
         },
@@ -160,6 +212,8 @@ function buildPrompt(fileName, context) {
   return [
     "Analise a imagem da peca e extraia os dados para busca de compra.",
     "Primeiro identifique visualmente o que e a peca: formato, material, conectores, furos, engrenagens, placa, carcaca, bico, bomba, sensor, valvula, filtro, rolamento, mangueira, motor, fonte, modulo ou outro objeto.",
+    "O campo partName deve sempre ter um melhor palpite visual em portugues, mesmo com baixa confianca.",
+    "O campo partFamily deve sempre ter uma categoria curta, por exemplo sensor, placa, bico, bomba, valvula, filtro, rolamento, mangueira, modulo, motor, conector, engrenagem ou peca desconhecida.",
     "Depois procure codigos gravados, etiqueta, QR/barcode, marca, nome da peca, aplicacao/modelo e segmento.",
     "Se nao existir codigo legivel, monte searchTerms com nome visual da peca, familia, segmento e caracteristicas visiveis.",
     "Classifique a condicao apenas se houver sinal claro: original, paralela, usada ou remanufaturada.",
@@ -197,9 +251,9 @@ function partSchema() {
         items: { type: "string" },
         description: "Outros codigos ou referencias visiveis."
       },
-      partName: { type: ["string", "null"], description: "Nome visual provavel da peca, mesmo sem codigo. Ex: bico injetor, sensor, rolamento, placa eletronica, filtro, bomba, valvula." },
-      partFamily: { type: ["string", "null"], description: "Familia ou categoria visual da peca. Ex: sensor, bico, bomba, placa, filtro, rolamento, mangueira, modulo, motor, conector." },
-      visualDescription: { type: ["string", "null"], description: "Descricao curta do que aparece fisicamente na imagem." },
+      partName: { type: "string", description: "Melhor palpite visual da peca, mesmo sem codigo. Ex: bico injetor, sensor, rolamento, placa eletronica, filtro, bomba, valvula. Se incerto, use algo como peca mecanica nao identificada." },
+      partFamily: { type: "string", description: "Familia ou categoria visual da peca. Ex: sensor, bico, bomba, placa, filtro, rolamento, mangueira, modulo, motor, conector ou peca desconhecida." },
+      visualDescription: { type: "string", description: "Descricao curta do que aparece fisicamente na imagem." },
       visualFeatures: {
         type: "array",
         items: { type: "string" },

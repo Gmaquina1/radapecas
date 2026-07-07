@@ -1,6 +1,6 @@
-const APP_VERSION = "v2.1.0-identificacao-visual";
+const APP_VERSION = "v2.3.0-busca-servidor";
 const TESSERACT_CDN = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
-const MARKETPLACE_API = "https://api.mercadolibre.com/sites/MLB/search";
+const MARKETPLACE_API = "/api/search-offers";
 const VISION_AI_ENDPOINT = "/api/analyze-image";
 
 const state = {
@@ -174,12 +174,24 @@ async function analyzeWithVisionAi() {
       const data = await safeReadJson(response);
       const detail = clean(data?.detail || data?.error);
       setProgress(detail ? `IA indisponivel: ${detail}` : "IA indisponivel. Usando leitura local...", 18);
+      setAnalysis(
+        "IA nao analisou a foto",
+        detail || "A chamada para a IA nao retornou uma resposta valida. Veja os Logs do Render.",
+        0,
+        ["erro na IA", "ver logs"]
+      );
       return null;
     }
 
     const data = await response.json();
     if (!data.ok || !data.result) {
       setProgress("IA nao confirmou a peca. Usando leitura local...", 18);
+      setAnalysis(
+        "IA nao retornou identificacao",
+        "O servidor respondeu, mas nao trouxe o nome visual da peca.",
+        0,
+        ["sem resposta visual", "ver logs"]
+      );
       return null;
     }
 
@@ -187,6 +199,12 @@ async function analyzeWithVisionAi() {
     return data.result;
   } catch (error) {
     setProgress(`IA offline: ${error.message || "falha de conexao"}`, 18);
+    setAnalysis(
+      "IA offline",
+      error.message || "Nao foi possivel enviar a foto para o servidor.",
+      0,
+      ["falha de conexao", "ver logs"]
+    );
     return null;
   }
 }
@@ -605,21 +623,21 @@ async function renderPurchaseCards() {
       key: "new",
       type: "Nova",
       title: selectedConditionTitle() || "Peca nova confirmada",
-      query: `${base} nova original paralela ${selectedConditionText()}`,
+      query: `${purchaseSearchText()} nova`,
       chips: ["Nova", clean(els.partCode.value) || "Codigo a confirmar", "Anuncio confirmado"]
     },
     {
       key: "used",
       type: "Usada",
       title: "Peca usada confirmada",
-      query: `${base} usada desmanche semi nova`,
+      query: `${purchaseSearchText()} usada`,
       chips: ["Usada", clean(els.partCode.value) || "Codigo a confirmar", "Existe anuncio"]
     },
     {
       key: "reman",
       type: "Remanufaturada",
       title: "Remanufaturada confirmada",
-      query: `${base} remanufaturada recuperada recondicionada`,
+      query: `${purchaseSearchText()} remanufaturada`,
       chips: ["Remanufaturada", clean(els.partCode.value) || "Codigo a confirmar", "Existe anuncio"]
     }
   ];
@@ -639,7 +657,7 @@ async function renderPurchaseCards() {
   const cards = await findConfirmedCards(cardRequests);
 
   if (!cards.length) {
-    renderEmptyResults("Nao encontrei anuncio confirmado com preco para essa peca. Confira o codigo ou informe marca e aplicacao/modelo.");
+    renderFallbackSearchLinks("Nao encontrei preco confirmado ainda. Use estes links para abrir buscas prontas com a peca identificada.");
     return;
   }
 
@@ -680,7 +698,7 @@ async function renderPurchaseCards() {
 
 async function findConfirmedCards(cardRequests) {
   const responses = await Promise.all(cardRequests.map(async card => {
-    const offers = await searchMarketplace(card.query);
+    const offers = await searchMarketplaceWithFallback(card);
     return {
       ...card,
       offers: filterOffersByCategory(offers, card.key).slice(0, 3)
@@ -688,6 +706,52 @@ async function findConfirmedCards(cardRequests) {
   }));
 
   return responses.filter(card => card.offers.length);
+}
+
+async function searchMarketplaceWithFallback(card) {
+  const queries = buildOfferQueries(card);
+  const seenUrls = new Set();
+  const combined = [];
+
+  for (const query of queries) {
+    const offers = await searchMarketplace(query);
+    offers.forEach(offer => {
+      if (!seenUrls.has(offer.url)) {
+        seenUrls.add(offer.url);
+        combined.push(offer);
+      }
+    });
+
+    if (combined.length >= 12) break;
+  }
+
+  return combined;
+}
+
+function buildOfferQueries(card) {
+  const code = clean(els.partCode.value);
+  const main = purchaseSearchText();
+  const part = clean(els.partName.value) || clean(state.lastAiResult?.partName) || clean(state.lastAiResult?.partFamily);
+  const brand = clean(els.brand.value);
+  const machine = clean(els.machine.value);
+  const family = clean(state.lastAiResult?.partFamily);
+
+  const conditionWords = {
+    new: ["nova", "original"],
+    used: ["usada", "desmanche"],
+    reman: ["remanufaturada", "recondicionada"]
+  }[card.key] || [];
+
+  return [
+    [code, ...conditionWords].join(" "),
+    [code, part, brand, machine].join(" "),
+    [part, brand, machine, conditionWords[0]].join(" "),
+    [part, family, conditionWords[0]].join(" "),
+    main
+  ]
+    .map(item => item.replace(/\s+/g, " ").trim())
+    .filter(item => item.length >= 3)
+    .filter((item, index, list) => list.indexOf(item) === index);
 }
 
 async function searchMarketplace(query) {
@@ -755,7 +819,7 @@ function minimumOfferScore() {
   const code = compactText(els.partCode.value);
   const terms = buildRelevanceTerms();
   if (code.length >= 5) return 65;
-  return terms.length >= 2 ? 32 : 50;
+  return terms.length >= 2 ? 18 : 22;
 }
 
 function buildRelevanceTerms() {
@@ -838,6 +902,29 @@ function renderEmptyResults(message = "Tire uma foto ou informe a peca.") {
   els.queryPreview.textContent = message;
 }
 
+function renderFallbackSearchLinks(message) {
+  const query = purchaseSearchText() || baseSearchText();
+  els.resultsGrid.innerHTML = "";
+  els.queryPreview.textContent = query || message;
+
+  const node = els.resultTemplate.content.cloneNode(true);
+  node.querySelector(".result-type").textContent = "Busca pronta";
+  node.querySelector("h3").textContent = clean(els.partName.value) || clean(state.lastAiResult?.partName) || "Peca identificada";
+  node.querySelector(".result-desc").textContent = message;
+
+  const linksWrap = node.querySelector(".buy-links");
+  buildPurchaseLinks(query || clean(els.partName.value) || "peca", "Busca").forEach(link => {
+    const anchor = document.createElement("a");
+    anchor.href = link.url;
+    anchor.target = "_blank";
+    anchor.rel = "noopener";
+    anchor.textContent = link.label;
+    linksWrap.appendChild(anchor);
+  });
+
+  els.resultsGrid.appendChild(node);
+}
+
 function hasSearchData() {
   return Boolean(baseSearchText());
 }
@@ -850,6 +937,24 @@ function baseSearchText() {
     clean(els.machine.value),
     selectedSegmentText(),
     ...visualSearchTerms()
+  ].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+}
+
+function purchaseSearchText() {
+  const code = clean(els.partCode.value);
+  if (code) {
+    return [
+      code,
+      clean(els.brand.value),
+      clean(els.machine.value)
+    ].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+  }
+
+  return [
+    clean(els.partName.value) || clean(state.lastAiResult?.partName) || clean(state.lastAiResult?.partFamily),
+    clean(els.brand.value),
+    clean(els.machine.value),
+    selectedSegmentText()
   ].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
 }
 
