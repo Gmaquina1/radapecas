@@ -1,4 +1,4 @@
-const APP_VERSION = "v2.0.0-ia-top";
+const APP_VERSION = "v2.0.1-diagnostico";
 const TESSERACT_CDN = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
 const MARKETPLACE_API = "https://api.mercadolibre.com/sites/MLB/search";
 const VISION_AI_ENDPOINT = "/api/analyze-image";
@@ -171,7 +171,9 @@ async function analyzeWithVisionAi() {
     });
 
     if (!response.ok) {
-      setProgress("IA indisponivel. Usando leitura local...", 18);
+      const data = await safeReadJson(response);
+      const detail = clean(data?.detail || data?.error);
+      setProgress(detail ? `IA indisponivel: ${detail}` : "IA indisponivel. Usando leitura local...", 18);
       return null;
     }
 
@@ -183,9 +185,17 @@ async function analyzeWithVisionAi() {
 
     state.lastAiResult = data.result;
     return data.result;
-  } catch {
-    setProgress("IA offline. Usando leitura local...", 18);
+  } catch (error) {
+    setProgress(`IA offline: ${error.message || "falha de conexao"}`, 18);
     return null;
+  }
+}
+
+async function safeReadJson(response) {
+  try {
+    return await response.json();
+  } catch {
+    return {};
   }
 }
 

@@ -9,6 +9,7 @@ loadEnvFile(path.join(ROOT, ".env"));
 const RAW_OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const OPENAI_API_KEY = RAW_OPENAI_API_KEY.includes("coloque_sua_chave") ? "" : RAW_OPENAI_API_KEY;
 const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.5";
+const APP_VERSION = "v2.0.1-diagnostico";
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
 
 const MIME_TYPES = {
@@ -29,7 +30,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/health") {
       sendJson(res, 200, {
         ok: true,
-        version: "v2.0.0-ia-top",
+        version: APP_VERSION,
         aiConfigured: Boolean(OPENAI_API_KEY),
         model: OPENAI_MODEL
       });
@@ -48,17 +49,22 @@ const server = http.createServer(async (req, res) => {
 
     sendJson(res, 405, { ok: false, error: "Metodo nao permitido." });
   } catch (error) {
+    console.error(`[${new Date().toISOString()}] Erro interno: ${error.message}`);
     sendJson(res, 500, { ok: false, error: "Erro interno.", detail: error.message });
   }
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Radar Pecas v2.0.0-ia-top rodando em http://localhost:${PORT}`);
+  console.log(`Radar Pecas ${APP_VERSION} rodando em http://localhost:${PORT}`);
   console.log(OPENAI_API_KEY ? `IA ativa com modelo ${OPENAI_MODEL}` : "IA sem chave: configure OPENAI_API_KEY.");
 });
 
 async function handleAnalyzeImage(req, res) {
+  const startedAt = Date.now();
+  console.log(`[${new Date().toISOString()}] IA: chamada recebida em /api/analyze-image`);
+
   if (!OPENAI_API_KEY) {
+    console.log(`[${new Date().toISOString()}] IA: OPENAI_API_KEY nao configurada`);
     sendJson(res, 503, { ok: false, error: "OPENAI_API_KEY nao configurada." });
     return;
   }
@@ -67,17 +73,24 @@ async function handleAnalyzeImage(req, res) {
   const imageDataUrl = String(body.imageDataUrl || "");
 
   if (!/^data:image\/(jpeg|jpg|png|webp);base64,/i.test(imageDataUrl)) {
+    console.log(`[${new Date().toISOString()}] IA: imagem invalida ou vazia`);
     sendJson(res, 400, { ok: false, error: "Imagem invalida." });
     return;
   }
 
-  const result = await callVisionModel({
-    imageDataUrl,
-    fileName: String(body.fileName || ""),
-    context: body.context || {}
-  });
+  try {
+    const result = await callVisionModel({
+      imageDataUrl,
+      fileName: String(body.fileName || ""),
+      context: body.context || {}
+    });
 
-  sendJson(res, 200, { ok: true, result });
+    console.log(`[${new Date().toISOString()}] IA: sucesso em ${Date.now() - startedAt}ms`);
+    sendJson(res, 200, { ok: true, result });
+  } catch (error) {
+    console.error(`[${new Date().toISOString()}] IA: falhou - ${error.message}`);
+    sendJson(res, 502, { ok: false, error: "IA indisponivel.", detail: error.message });
+  }
 }
 
 async function callVisionModel({ imageDataUrl, fileName, context }) {
@@ -129,7 +142,11 @@ async function callVisionModel({ imageDataUrl, fileName, context }) {
   const data = await response.json();
 
   if (!response.ok) {
-    const message = data?.error?.message || "Falha na IA.";
+    const message = [
+      data?.error?.message || "Falha na IA.",
+      data?.error?.type ? `tipo=${data.error.type}` : "",
+      data?.error?.code ? `codigo=${data.error.code}` : ""
+    ].filter(Boolean).join(" | ");
     throw new Error(message);
   }
 

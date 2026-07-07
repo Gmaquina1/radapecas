@@ -1,6 +1,6 @@
 # Radar Pecas
 
-Versao: v2.0.0-ia-top
+Versao: v2.0.1-diagnostico
 
 ## Como testar
 
