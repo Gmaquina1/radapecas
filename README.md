@@ -13,6 +13,7 @@ Prototipo de app web para buscar pecas por foto, codigo e dados da maquina/veicu
 ## O que ja funciona
 
 - Leitura de codigo por OCR no navegador usando Tesseract.js.
+- Analise visual sem chave usando modelo gratuito no navegador quando disponivel.
 - Tentativa de leitura de codigo de barras quando o navegador suporta `BarcodeDetector`.
 - Campo manual para corrigir codigo, marca, maquina, cidade e tipo da peca.
 - Links de busca para Google, Google Shopping, Mercado Livre, OLX e Shopee.
@@ -21,6 +22,16 @@ Prototipo de app web para buscar pecas por foto, codigo e dados da maquina/veicu
 - Cadastro local de fornecedores alvo por dominio.
 - Historico local das ultimas buscas.
 - Botao para copiar mensagem de pedido para WhatsApp.
+
+## Modo para captar recurso
+
+Esta versao serve para apresentar a ideia sem custo de API:
+
+- mostra a experiencia no celular por link;
+- roda OCR sem chave;
+- tenta uma classificacao visual local;
+- monta buscas automaticas;
+- deixa claro que a precisao alta depende de investimento em base de fotos, fornecedores e IA profissional.
 
 ## Importante
 

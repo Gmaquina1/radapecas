@@ -42,6 +42,7 @@
           <canvas id="previewCanvas"></canvas>
           <div class="preview-actions">
             <button class="primary-btn" id="runOcrBtn" type="button">Ler codigo da foto</button>
+            <button class="primary-btn gold-btn" id="analyzeAiBtn" type="button">IA sem chave</button>
             <button class="secondary-btn" id="enhanceBtn" type="button">Melhorar contraste</button>
           </div>
         </div>
@@ -103,6 +104,34 @@
           <button class="secondary-btn" id="copyRequestBtn" type="button">Copiar pedido</button>
         </div>
       </form>
+    </section>
+
+    <section class="ai-demo-section">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">Modo apresentacao</p>
+          <h2>Analise IA sem chave</h2>
+        </div>
+        <span class="free-pill">Roda no navegador</span>
+      </div>
+
+      <div class="ai-grid">
+        <div class="ai-card">
+          <span class="ai-kicker">Resultado</span>
+          <h3 id="aiPartType">Aguardando foto da peca</h3>
+          <p id="aiSummary">Use uma foto real para o prototipo sugerir tipo de peca, codigo lido e buscas provaveis.</p>
+        </div>
+        <div class="ai-card">
+          <span class="ai-kicker">Confianca</span>
+          <div class="confidence-meter">
+            <span id="confidenceBar"></span>
+          </div>
+          <strong id="confidenceText">0%</strong>
+          <p>Para captar recurso, o objetivo e demonstrar o fluxo. Precisao alta vem com base de fotos e fornecedores.</p>
+        </div>
+      </div>
+
+      <div class="ai-tags" id="aiTags"></div>
     </section>
 
     <section class="results-section">

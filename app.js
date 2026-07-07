@@ -3,7 +3,9 @@ const state = {
   enhanced: false,
   query: "",
   suppliers: [],
-  history: []
+  history: [],
+  visionModel: null,
+  aiLabels: []
 };
 
 const defaultSuppliers = [
@@ -20,6 +22,7 @@ const els = {
   previewWrap: document.querySelector("#previewWrap"),
   canvas: document.querySelector("#previewCanvas"),
   runOcrBtn: document.querySelector("#runOcrBtn"),
+  analyzeAiBtn: document.querySelector("#analyzeAiBtn"),
   enhanceBtn: document.querySelector("#enhanceBtn"),
   resetBtn: document.querySelector("#resetBtn"),
   progressText: document.querySelector("#progressText"),
@@ -43,7 +46,12 @@ const els = {
   supplierName: document.querySelector("#supplierName"),
   supplierDomain: document.querySelector("#supplierDomain"),
   supplierList: document.querySelector("#supplierList"),
-  historyList: document.querySelector("#historyList")
+  historyList: document.querySelector("#historyList"),
+  aiPartType: document.querySelector("#aiPartType"),
+  aiSummary: document.querySelector("#aiSummary"),
+  confidenceBar: document.querySelector("#confidenceBar"),
+  confidenceText: document.querySelector("#confidenceText"),
+  aiTags: document.querySelector("#aiTags")
 };
 
 init();
@@ -89,6 +97,7 @@ function bindEvents() {
   });
 
   els.runOcrBtn.addEventListener("click", runRecognition);
+  els.analyzeAiBtn.addEventListener("click", runFreeAiAnalysis);
   els.resetBtn.addEventListener("click", resetAll);
 
   els.form.addEventListener("submit", event => {
@@ -237,6 +246,166 @@ function ensureTesseract() {
     script.onerror = reject;
     document.head.appendChild(script);
   });
+}
+
+async function runFreeAiAnalysis() {
+  if (!state.image) {
+    setProgress("Envie uma foto primeiro para a IA analisar.", 0);
+    return;
+  }
+
+  setProgress("Carregando IA gratuita no navegador...", 18);
+
+  let labels = [];
+  try {
+    await ensureFreeVisionModel();
+    labels = await state.visionModel.classify(els.canvas);
+    state.aiLabels = labels;
+  } catch {
+    labels = [];
+    state.aiLabels = [];
+  }
+
+  const analysis = buildFreeAiReport(labels);
+  renderFreeAiReport(analysis);
+  applyAnalysisToSearch(analysis);
+  buildSearch();
+  setProgress("Analise IA pronta para apresentacao.", 100);
+}
+
+function ensureFreeVisionModel() {
+  return new Promise(async (resolve, reject) => {
+    try {
+      if (state.visionModel) {
+        resolve();
+        return;
+      }
+
+      await loadScript("https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js");
+      await loadScript("https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js");
+
+      if (!window.mobilenet) {
+        reject(new Error("Modelo visual nao carregou."));
+        return;
+      }
+
+      state.visionModel = await mobilenet.load({ version: 2, alpha: 1.0 });
+      resolve();
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const existing = [...document.scripts].find(script => script.src === src);
+    if (existing) {
+      resolve();
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+function buildFreeAiReport(labels) {
+  const code = clean(els.partCode.value);
+  const typedPart = clean(els.partName.value);
+  const brand = clean(els.brand.value);
+  const machine = clean(els.machine.value);
+  const labelText = labels.map(item => item.className).join(" ").toLowerCase();
+  const combined = `${typedPart} ${brand} ${machine} ${labelText}`.toLowerCase();
+  const partGuess = inferPartFamily(combined);
+  const confidence = calculateDemoConfidence({ labels, code, typedPart, brand, machine, partGuess });
+  const terms = buildAiSearchTerms({ code, typedPart, brand, machine, partGuess });
+
+  return {
+    partGuess,
+    confidence,
+    labels,
+    terms,
+    summary: makeAiSummary({ code, typedPart, brand, machine, partGuess, labels })
+  };
+}
+
+function inferPartFamily(text) {
+  const bank = [
+    { name: "bomba hidraulica / componente hidraulico", words: ["bomba", "hidraul", "hydraulic", "mangueira", "valvula", "comando", "cilindro"] },
+    { name: "filtro / elemento de manutencao", words: ["filtro", "filter", "oil", "air", "diesel"] },
+    { name: "sensor / modulo eletronico", words: ["sensor", "modulo", "module", "ecu", "eletron", "chicote"] },
+    { name: "motor / injecao diesel", words: ["motor", "diesel", "bico", "injetor", "injector", "bomba injetora"] },
+    { name: "transmissao / caixa / cardan", words: ["caixa", "transmiss", "gear", "cardan", "diferencial"] },
+    { name: "material rodante / esteira", words: ["esteira", "rolete", "corrente", "sprocket", "rodante"] },
+    { name: "radiador / arrefecimento", words: ["radiador", "cooler", "ventoinha", "arrefecimento"] },
+    { name: "rolamento / retentor / vedacao", words: ["rolamento", "bearing", "retentor", "vedacao", "seal"] }
+  ];
+
+  const hit = bank.find(item => item.words.some(word => text.includes(word)));
+  return hit ? hit.name : "peca mecanica ou automotiva a confirmar";
+}
+
+function calculateDemoConfidence({ labels, code, typedPart, brand, machine, partGuess }) {
+  let score = 20;
+  if (labels.length) score += Math.round(Math.min(25, (labels[0].probability || 0) * 35));
+  if (code) score += 25;
+  if (typedPart) score += 15;
+  if (brand) score += 10;
+  if (machine) score += 10;
+  if (partGuess !== "peca mecanica ou automotiva a confirmar") score += 10;
+  return Math.max(15, Math.min(92, score));
+}
+
+function buildAiSearchTerms({ code, typedPart, brand, machine, partGuess }) {
+  const main = [code && `"${code}"`, typedPart || partGuess, brand, machine, "peca"].filter(Boolean).join(" ");
+  const terms = [
+    main,
+    [code && `"${code}"`, brand, "catalogo pdf aplicacao"].filter(Boolean).join(" "),
+    [typedPart || partGuess, machine, "fornecedor Brasil"].filter(Boolean).join(" "),
+    [code && `"${code}"`, "usada remanufaturada"].filter(Boolean).join(" ")
+  ];
+
+  return [...new Set(terms.filter(Boolean))];
+}
+
+function makeAiSummary({ code, typedPart, brand, machine, partGuess, labels }) {
+  const visual = labels[0]?.className ? `A IA visual gratuita viu algo parecido com: ${labels[0].className}.` : "A IA visual gratuita nao trouxe classificacao forte, mas o fluxo de busca continua pelo OCR e dados manuais.";
+  const codeText = code ? `Codigo usado na busca: ${code}.` : "Sem codigo confirmado ainda.";
+  const context = [typedPart, brand, machine].filter(Boolean).join(" / ");
+  const contextText = context ? `Contexto informado: ${context}.` : "Adicione marca ou maquina para aumentar a precisao.";
+
+  return `${partGuess}. ${codeText} ${contextText} ${visual}`;
+}
+
+function renderFreeAiReport(analysis) {
+  els.aiPartType.textContent = analysis.partGuess;
+  els.aiSummary.textContent = analysis.summary;
+  els.confidenceText.textContent = `${analysis.confidence}%`;
+  els.confidenceBar.style.width = `${analysis.confidence}%`;
+  els.aiTags.innerHTML = "";
+
+  const tags = [
+    ...analysis.terms,
+    ...analysis.labels.slice(0, 3).map(item => `Visual: ${item.className}`)
+  ];
+
+  tags.forEach(tag => {
+    const span = document.createElement("span");
+    span.className = "ai-tag";
+    span.textContent = tag;
+    els.aiTags.appendChild(span);
+  });
+}
+
+function applyAnalysisToSearch(analysis) {
+  if (!clean(els.partName.value) && analysis.partGuess !== "peca mecanica ou automotiva a confirmar") {
+    els.partName.value = analysis.partGuess;
+  }
 }
 
 function extractPartCodes(text) {
@@ -520,6 +689,11 @@ function resetAll() {
   els.form.reset();
   els.candidateList.innerHTML = "";
   els.previewWrap.classList.add("is-hidden");
+  els.aiPartType.textContent = "Aguardando foto da peca";
+  els.aiSummary.textContent = "Use uma foto real para o prototipo sugerir tipo de peca, codigo lido e buscas provaveis.";
+  els.confidenceText.textContent = "0%";
+  els.confidenceBar.style.width = "0%";
+  els.aiTags.innerHTML = "";
   els.queryPreview.textContent = "Preencha os dados para montar a busca.";
   setProgress("Aguardando foto", 0);
   renderResults();
