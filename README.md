@@ -1,19 +1,27 @@
 # Radar Pecas
 
-Versao: v1.5.0-verificado
+Versao: v2.0.0-ia-top
 
 ## Como testar
 
-1. Abra `index.html`.
-2. Clique em `Enviar ou tirar foto da peca`.
-3. Envie foto do codigo, etiqueta, embalagem ou placa da peca.
-4. Clique em `Reconhecer foto`.
-5. Se o codigo nao aparecer, preencha codigo, nome da peca, marca ou maquina.
-6. Clique em `Buscar peca`.
+1. Instale Node.js 20 ou superior.
+2. Copie `.env.example` para `.env`.
+3. Coloque sua chave em `OPENAI_API_KEY`.
+4. Rode `npm start`.
+5. Abra `http://localhost:3000` no computador ou no celular pela mesma rede.
+6. Clique em `Tirar foto` ou `Galeria`.
+7. Clique em `Reconhecer com IA`.
+
+Sem `OPENAI_API_KEY`, a tela ainda abre, mas usa apenas a leitura local por codigo/OCR.
 
 ## O que funciona nesta versao
 
-- Botao `Reconhecer foto`.
+- Botao `Reconhecer com IA`.
+- Backend `server.js` com IA de visao real.
+- Chave da IA protegida no servidor, fora do HTML.
+- Acesso separado para camera e galeria do celular.
+- Busca geral para pecas automotivas, moto, maquina, eletrodomestico, industrial, hidraulica, eletrica e eletronica.
+- Campo de segmento para direcionar melhor a busca.
 - Leitura de codigo por OCR no navegador.
 - Segunda leitura automatica com contraste alto para melhorar codigo em etiqueta.
 - Tentativa de leitura de codigo de barras quando o navegador suporta.
@@ -23,6 +31,12 @@ Versao: v1.5.0-verificado
 - Versao visivel na tela.
 - Botao para copiar pedido de cotacao.
 
+## Variaveis
+
+- `OPENAI_API_KEY`: chave da OpenAI.
+- `OPENAI_MODEL`: modelo de visao. Padrao: `gpt-5.5`.
+- `PORT`: porta local. Padrao: `3000`.
+
 ## Observacao
 
-Sem backend e sem API paga, o HTML nao consegue identificar qualquer peca apenas pelo formato da foto com precisao profissional. O fluxo mais confiavel para teste e reconhecer codigo/etiqueta da peca e montar os links de compra automaticamente.
+A IA identifica a peca pela foto, mas resultados de compra continuam sendo confirmados por anuncios com preco e link. Usada e remanufaturada so aparecem quando houver sinal real no anuncio.

@@ -1,10 +1,12 @@
-const APP_VERSION = "v1.5.0-verificado";
+const APP_VERSION = "v2.0.0-ia-top";
 const TESSERACT_CDN = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
 const MARKETPLACE_API = "https://api.mercadolibre.com/sites/MLB/search";
+const VISION_AI_ENDPOINT = "/api/analyze-image";
 
 const state = {
   imageLoaded: false,
   fileName: "",
+  lastAiResult: null,
   lastOcrText: "",
   lastCodes: []
 };
@@ -12,6 +14,7 @@ const state = {
 const els = {
   versionBadge: document.querySelector("#versionBadge"),
   input: document.querySelector("#photoInput"),
+  cameraInput: document.querySelector("#cameraInput"),
   dropZone: document.querySelector("#dropZone"),
   previewWrap: document.querySelector("#previewWrap"),
   canvas: document.querySelector("#previewCanvas"),
@@ -27,6 +30,7 @@ const els = {
   brand: document.querySelector("#brand"),
   machine: document.querySelector("#machine"),
   location: document.querySelector("#location"),
+  segment: document.querySelector("#segment"),
   partType: document.querySelector("#partType"),
   candidateList: document.querySelector("#candidateList"),
   queryPreview: document.querySelector("#queryPreview"),
@@ -51,6 +55,11 @@ function init() {
 
 function bindEvents() {
   els.input.addEventListener("change", event => {
+    const file = event.target.files?.[0];
+    if (file) loadImage(file);
+  });
+
+  els.cameraInput.addEventListener("change", event => {
     const file = event.target.files?.[0];
     if (file) loadImage(file);
   });
@@ -83,7 +92,7 @@ function bindEvents() {
     runManualSearch();
   });
 
-  [els.partCode, els.partName, els.brand, els.machine, els.location, els.partType].forEach(input => {
+  [els.partCode, els.partName, els.brand, els.machine, els.location, els.segment, els.partType].forEach(input => {
     input.addEventListener("input", updateQueryPreview);
     input.addEventListener("change", updateQueryPreview);
   });
@@ -101,8 +110,8 @@ function loadImage(file) {
       drawImage(img);
       state.imageLoaded = true;
       els.previewWrap.classList.remove("is-hidden");
-      setProgress("Foto carregada. Clique em Reconhecer foto.", 20);
-      setAnalysis("Foto carregada", "Pronto para ler codigo, etiqueta ou texto da peca.", 0, ["aguardando reconhecimento"]);
+      setProgress("Foto carregada. Clique em Reconhecer com IA.", 20);
+      setAnalysis("Foto carregada", "Pronto para ler codigo, etiqueta, placa, embalagem ou texto da peca.", 0, ["aguardando reconhecimento"]);
     };
     img.src = reader.result;
   };
@@ -138,7 +147,161 @@ function enhanceCanvas() {
   }
 
   ctx.putImageData(imageData, 0, 0);
-  setProgress("Contraste aplicado. Clique em Reconhecer foto novamente.", 25);
+  setProgress("Contraste aplicado. Clique em Reconhecer com IA novamente.", 25);
+}
+
+async function analyzeWithVisionAi() {
+  try {
+    const imageDataUrl = canvasToAiImage();
+    const response = await fetch(VISION_AI_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        imageDataUrl,
+        fileName: state.fileName,
+        context: {
+          code: clean(els.partCode.value),
+          partName: clean(els.partName.value),
+          brand: clean(els.brand.value),
+          applicationModel: clean(els.machine.value),
+          segment: selectedSegmentText(),
+          condition: selectedConditionText()
+        }
+      })
+    });
+
+    if (!response.ok) {
+      setProgress("IA indisponivel. Usando leitura local...", 18);
+      return null;
+    }
+
+    const data = await response.json();
+    if (!data.ok || !data.result) {
+      setProgress("IA nao confirmou a peca. Usando leitura local...", 18);
+      return null;
+    }
+
+    state.lastAiResult = data.result;
+    return data.result;
+  } catch {
+    setProgress("IA offline. Usando leitura local...", 18);
+    return null;
+  }
+}
+
+function canvasToAiImage() {
+  const maxSide = 1280;
+  const scale = Math.min(1, maxSide / Math.max(els.canvas.width, els.canvas.height));
+  const target = document.createElement("canvas");
+  target.width = Math.max(1, Math.round(els.canvas.width * scale));
+  target.height = Math.max(1, Math.round(els.canvas.height * scale));
+
+  const ctx = target.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, target.width, target.height);
+  ctx.drawImage(els.canvas, 0, 0, target.width, target.height);
+
+  return target.toDataURL("image/jpeg", 0.86);
+}
+
+function applyAiResult(result) {
+  const codes = [
+    clean(result.partCode),
+    ...(Array.isArray(result.alternativeCodes) ? result.alternativeCodes.map(clean) : [])
+  ].filter(Boolean);
+
+  if (codes.length) {
+    applyDetectedCodes(codes, "IA encontrou codigo(s)");
+  }
+
+  if (!clean(els.partName.value) && clean(result.partName)) els.partName.value = clean(result.partName);
+  if (!clean(els.brand.value) && clean(result.brand)) els.brand.value = clean(result.brand);
+  if (!clean(els.machine.value) && clean(result.applicationModel)) els.machine.value = clean(result.applicationModel);
+
+  selectByAiValue(els.segment, result.segment);
+  selectByAiValue(els.partType, result.condition);
+
+  const hasAnyResult = Boolean(
+    clean(els.partCode.value) ||
+    clean(els.partName.value) ||
+    clean(els.brand.value) ||
+    clean(els.machine.value)
+  );
+
+  if (!hasAnyResult) {
+    setAnalysis(
+      "IA nao confirmou a peca",
+      clean(result.notes) || "A foto nao trouxe informacao suficiente para uma busca confiavel.",
+      confidenceFromAi(result),
+      ["foto inconclusiva", "preencha dados"]
+    );
+    return false;
+  }
+
+  setAnalysis(
+    clean(result.partName) || clean(result.partCode) || "Peca identificada por IA",
+    clean(result.notes) || "IA de visao analisou a foto e extraiu os dados principais.",
+    confidenceFromAi(result),
+    buildAiTags(result)
+  );
+
+  updateQueryPreview();
+  return true;
+}
+
+function selectByAiValue(select, value) {
+  const normalized = normalizeText(value);
+  if (!select || !normalized) return;
+
+  const aliases = {
+    novo: "original",
+    nova: "original",
+    new: "original",
+    original: "original",
+    paralela: "paralela",
+    paralelo: "paralela",
+    usada: "usada",
+    usado: "usada",
+    used: "usada",
+    reman: "remanufaturada",
+    remanufaturada: "remanufaturada",
+    remanufaturado: "remanufaturada",
+    recondicionada: "remanufaturada",
+    recondicionado: "remanufaturada",
+    recuperada: "remanufaturada",
+    recuperado: "remanufaturada",
+    automotivo: "automotiva",
+    automotiva: "automotiva",
+    motocicleta: "moto",
+    moto: "moto",
+    caminhao: "caminhao",
+    maquina: "maquina",
+    agricola: "maquina",
+    eletrodomestico: "eletrodomestico",
+    industrial: "industrial",
+    eletrica: "eletrica",
+    eletronica: "eletronica",
+    hidraulica: "hidraulica"
+  };
+
+  const wanted = aliases[normalized] || normalized;
+  const option = [...select.options].find(item => item.value === wanted || normalizeText(item.textContent) === wanted);
+  if (option) select.value = option.value;
+}
+
+function confidenceFromAi(result) {
+  const value = Number(result?.confidence || 0);
+  if (value <= 1) return Math.round(value * 100);
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function buildAiTags(result) {
+  return [
+    clean(result.partCode) ? `codigo ${clean(result.partCode)}` : "codigo a confirmar",
+    clean(result.segment) || selectedSegmentText() || "segmento geral",
+    clean(result.condition) || "condicao a confirmar",
+    ...(Array.isArray(result.searchTerms) ? result.searchTerms.slice(0, 2).map(clean).filter(Boolean) : [])
+  ];
 }
 
 async function recognizePhoto() {
@@ -148,7 +311,13 @@ async function recognizePhoto() {
   }
 
   clearCandidates();
-  setProgress("Reconhecendo foto...", 12);
+  setProgress("Reconhecendo foto com IA...", 12);
+
+  const aiResult = await analyzeWithVisionAi();
+  if (aiResult && applyAiResult(aiResult) && hasSearchData()) {
+    await finishRecognition("IA analisou a foto. Verificando anuncios reais.", confidenceFromAi(aiResult));
+    return;
+  }
 
   const barcodeCodes = await detectBarcodeCodes();
   if (barcodeCodes.length) {
@@ -176,11 +345,11 @@ async function recognizePhoto() {
   } else {
     setAnalysis(
       "Nao consegui identificar a peca",
-      "A foto nao trouxe codigo legivel. Preencha codigo, nome, marca ou maquina e clique em Buscar peca.",
+      "A foto nao trouxe codigo legivel. Preencha codigo, nome, marca ou aplicacao/modelo e clique em Buscar peca.",
       25,
       ["foto sem codigo claro", "preencha dados para buscar"]
     );
-    renderEmptyResults("Informe codigo, nome, marca ou maquina para montar links reais.");
+    renderEmptyResults("Informe codigo, nome, marca ou aplicacao/modelo para montar links reais.");
     setProgress("Nao encontrei dados suficientes.", 35);
   }
 }
@@ -330,15 +499,30 @@ function scoreCode(code) {
 function inferPartFromText(text) {
   const normalized = (text || "").toLowerCase();
   const families = [
-    ["bomba hidraulica", ["bomba", "hydraulic", "hidraul"]],
+    ["bomba", ["bomba", "pump"]],
     ["filtro", ["filtro", "filter"]],
-    ["sensor", ["sensor"]],
-    ["modulo eletronico", ["modulo", "module", "ecu"]],
+    ["sensor", ["sensor", "sonda"]],
+    ["modulo eletronico", ["modulo", "module", "ecu", "central"]],
+    ["placa eletronica", ["placa", "board", "pci", "eletronica"]],
     ["bico injetor", ["injetor", "injector", "bico"]],
     ["radiador", ["radiador", "cooler"]],
     ["rolamento", ["rolamento", "bearing"]],
     ["correia", ["correia", "belt"]],
-    ["mangueira hidraulica", ["mangueira", "hose"]]
+    ["mangueira", ["mangueira", "hose"]],
+    ["pastilha de freio", ["pastilha", "brake", "freio"]],
+    ["disco de freio", ["disco", "brake", "freio"]],
+    ["vela de ignicao", ["vela", "spark", "ignicao"]],
+    ["bobina", ["bobina", "coil"]],
+    ["amortecedor", ["amortecedor", "shock"]],
+    ["retentor", ["retentor", "seal"]],
+    ["junta", ["junta", "gasket"]],
+    ["engrenagem", ["engrenagem", "gear"]],
+    ["valvula", ["valvula", "valve"]],
+    ["resistencia", ["resistencia", "heating"]],
+    ["compressor", ["compressor"]],
+    ["termostato", ["termostato", "thermostat"]],
+    ["fonte", ["fonte", "power supply"]],
+    ["conector", ["conector", "connector"]]
   ];
 
   const found = families.find(([, words]) => words.some(word => normalized.includes(word)));
@@ -384,7 +568,7 @@ async function finishRecognition(message, confidence) {
 
 async function runManualSearch() {
   if (!hasSearchData()) {
-    renderEmptyResults("Informe codigo, nome da peca, marca ou maquina.");
+    renderEmptyResults("Informe codigo, nome da peca, marca ou aplicacao/modelo.");
     setProgress("Dados insuficientes para buscar.", 0);
     return;
   }
@@ -395,7 +579,7 @@ async function runManualSearch() {
 async function renderPurchaseCards() {
   const base = baseSearchText();
   if (!base) {
-    renderEmptyResults("Informe codigo, nome da peca, marca ou maquina.");
+    renderEmptyResults("Informe codigo, nome da peca, marca ou aplicacao/modelo.");
     return;
   }
 
@@ -403,12 +587,12 @@ async function renderPurchaseCards() {
   els.queryPreview.textContent = base;
   setProgress("Buscando anuncios com preco real...", 88);
 
-  const cardRequests = [
+  let cardRequests = [
     {
       key: "new",
       type: "Nova",
-      title: "Peca nova confirmada",
-      query: `${base} nova original paralela`,
+      title: selectedConditionTitle() || "Peca nova confirmada",
+      query: `${base} nova original paralela ${selectedConditionText()}`,
       chips: ["Nova", clean(els.partCode.value) || "Codigo a confirmar", "Anuncio confirmado"]
     },
     {
@@ -427,10 +611,22 @@ async function renderPurchaseCards() {
     }
   ];
 
+  if (els.partType.value === "usada") {
+    cardRequests = cardRequests.filter(card => card.key === "used");
+  }
+
+  if (els.partType.value === "remanufaturada") {
+    cardRequests = cardRequests.filter(card => card.key === "reman");
+  }
+
+  if (["original", "paralela"].includes(els.partType.value)) {
+    cardRequests = cardRequests.filter(card => card.key === "new");
+  }
+
   const cards = await findConfirmedCards(cardRequests);
 
   if (!cards.length) {
-    renderEmptyResults("Nao encontrei anuncio confirmado com preco para essa peca. Confira o codigo ou informe marca/maquina.");
+    renderEmptyResults("Nao encontrei anuncio confirmado com preco para essa peca. Confira o codigo ou informe marca e aplicacao/modelo.");
     return;
   }
 
@@ -553,7 +749,8 @@ function buildRelevanceTerms() {
   const raw = [
     clean(els.partName.value),
     clean(els.brand.value),
-    clean(els.machine.value)
+    clean(els.machine.value),
+    selectedSegmentText()
   ].join(" ");
 
   const blocked = new Set(["peca", "pecas", "codigo", "original", "paralela", "comprar", "para", "com"]);
@@ -636,7 +833,8 @@ function baseSearchText() {
     clean(els.partCode.value),
     clean(els.partName.value),
     clean(els.brand.value),
-    clean(els.machine.value)
+    clean(els.machine.value),
+    selectedSegmentText()
   ].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
 }
 
@@ -674,7 +872,8 @@ function copyRequest() {
     `Codigo: ${clean(els.partCode.value) || "nao informado"}`,
     `Peca: ${clean(els.partName.value) || "nao informado"}`,
     `Marca: ${clean(els.brand.value) || "nao informado"}`,
-    `Maquina/veiculo: ${clean(els.machine.value) || "nao informado"}`,
+    `Aplicacao/modelo: ${clean(els.machine.value) || "nao informado"}`,
+    `Segmento: ${selectedSegmentText() || "nao informado"}`,
     `Cidade/UF: ${clean(els.location.value) || "nao informado"}`,
     "",
     "Tem disponivel? Pode me passar valor, prazo e foto?"
@@ -702,6 +901,7 @@ function resetAll() {
   state.lastOcrText = "";
   state.lastCodes = [];
   els.input.value = "";
+  els.cameraInput.value = "";
   els.form.reset();
   els.candidateList.innerHTML = "";
   els.previewWrap.classList.add("is-hidden");
@@ -727,6 +927,24 @@ function setProgress(text, percent) {
 
 function clean(value) {
   return String(value || "").trim();
+}
+
+function selectedSegmentText() {
+  if (!els.segment || !els.segment.value) return "";
+  const option = els.segment.options[els.segment.selectedIndex];
+  return clean(option?.textContent || els.segment.value);
+}
+
+function selectedConditionText() {
+  if (!els.partType || !els.partType.value) return "";
+  const option = els.partType.options[els.partType.selectedIndex];
+  return clean(option?.textContent || els.partType.value);
+}
+
+function selectedConditionTitle() {
+  if (els.partType.value === "original") return "Peca original confirmada";
+  if (els.partType.value === "paralela") return "Peca paralela confirmada";
+  return "";
 }
 
 function escapeHtml(value) {
