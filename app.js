@@ -1,5 +1,6 @@
-const APP_VERSION = "v1.4.0-funcional";
+const APP_VERSION = "v1.5.0-verificado";
 const TESSERACT_CDN = "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js";
+const MARKETPLACE_API = "https://api.mercadolibre.com/sites/MLB/search";
 
 const state = {
   imageLoaded: false,
@@ -152,7 +153,7 @@ async function recognizePhoto() {
   const barcodeCodes = await detectBarcodeCodes();
   if (barcodeCodes.length) {
     applyDetectedCodes(barcodeCodes, "Codigo de barras");
-    finishRecognition("Codigo encontrado por leitor de barras.", 90);
+    await finishRecognition("Codigo encontrado por leitor de barras.", 90);
     return;
   }
 
@@ -171,7 +172,7 @@ async function recognizePhoto() {
   }
 
   if (hasSearchData()) {
-    finishRecognition(codes.length ? "Codigo reconhecido. Links prontos." : "Texto analisado. Links prontos com dados disponiveis.", codes.length ? 82 : 58);
+    await finishRecognition(codes.length ? "Codigo reconhecido. Verificando anuncios reais." : "Texto analisado. Verificando anuncios reais.", codes.length ? 82 : 58);
   } else {
     setAnalysis(
       "Nao consegui identificar a peca",
@@ -207,10 +208,18 @@ async function runOcr() {
   }
 
   try {
-    const originalText = await recognizeCanvasText(els.canvas, "Lendo texto/codigo da foto...", 15, 55);
-    const enhancedCanvas = buildHighContrastCanvas();
-    const enhancedText = await recognizeCanvasText(enhancedCanvas, "Conferindo codigo com contraste alto...", 56, 88);
-    return `${originalText}\n${enhancedText}`;
+    const variants = buildOcrCanvases();
+    const texts = [];
+
+    for (let index = 0; index < variants.length; index += 1) {
+      const minPct = 15 + (index * 24);
+      const maxPct = Math.min(88, minPct + 22);
+      const label = index === 0 ? "Lendo texto/codigo da foto..." : `Conferindo imagem ${index + 1}/${variants.length}...`;
+      const text = await recognizeCanvasText(variants[index], label, minPct, maxPct);
+      texts.push(text);
+    }
+
+    return texts.join("\n");
   } catch {
     return "";
   }
@@ -232,8 +241,16 @@ async function recognizeCanvasText(canvas, label, minPct, maxPct) {
   return result.data.text || "";
 }
 
-function buildHighContrastCanvas() {
-  const source = els.canvas;
+function buildOcrCanvases() {
+  return [
+    cloneCanvas(els.canvas, "normal"),
+    cloneCanvas(els.canvas, "contrast"),
+    cloneCanvas(els.canvas, "inverted"),
+    cloneCanvas(els.canvas, "sharp")
+  ];
+}
+
+function cloneCanvas(source, mode) {
   const target = document.createElement("canvas");
   target.width = source.width;
   target.height = source.height;
@@ -245,10 +262,23 @@ function buildHighContrastCanvas() {
 
   for (let i = 0; i < data.length; i += 4) {
     const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-    const threshold = gray > 150 ? 255 : 0;
-    data[i] = threshold;
-    data[i + 1] = threshold;
-    data[i + 2] = threshold;
+    let value = gray;
+
+    if (mode === "contrast") {
+      value = gray > 145 ? 255 : 0;
+    }
+
+    if (mode === "inverted") {
+      value = gray > 145 ? 0 : 255;
+    }
+
+    if (mode === "sharp") {
+      value = Math.max(0, Math.min(255, (gray - 110) * 2.2 + 110));
+    }
+
+    data[i] = value;
+    data[i + 1] = value;
+    data[i + 2] = value;
   }
 
   targetCtx.putImageData(imageData, 0, 0);
@@ -332,13 +362,13 @@ function applyDetectedCodes(codes, label) {
     button.textContent = code;
     button.addEventListener("click", () => {
       els.partCode.value = code;
-      finishRecognition("Codigo selecionado. Links atualizados.", 82);
+      finishRecognition("Codigo selecionado. Verificando anuncios reais.", 82);
     });
     els.candidateList.appendChild(button);
   });
 }
 
-function finishRecognition(message, confidence) {
+async function finishRecognition(message, confidence) {
   const searchText = baseSearchText();
   setAnalysis(
     clean(els.partName.value) || clean(els.partCode.value) || "Peca reconhecida",
@@ -347,22 +377,22 @@ function finishRecognition(message, confidence) {
     buildTags(searchText)
   );
   updateQueryPreview();
-  renderPurchaseCards();
+  await renderPurchaseCards();
   setProgress("Resultados prontos.", 100);
   scrollToResults();
 }
 
-function runManualSearch() {
+async function runManualSearch() {
   if (!hasSearchData()) {
     renderEmptyResults("Informe codigo, nome da peca, marca ou maquina.");
     setProgress("Dados insuficientes para buscar.", 0);
     return;
   }
 
-  finishRecognition("Busca montada com os dados informados.", 70);
+  await finishRecognition("Busca montada. Verificando anuncios reais.", 70);
 }
 
-function renderPurchaseCards() {
+async function renderPurchaseCards() {
   const base = baseSearchText();
   if (!base) {
     renderEmptyResults("Informe codigo, nome da peca, marca ou maquina.");
@@ -371,38 +401,57 @@ function renderPurchaseCards() {
 
   els.resultsGrid.innerHTML = "";
   els.queryPreview.textContent = base;
+  setProgress("Buscando anuncios com preco real...", 88);
 
-  const cards = [
+  const cardRequests = [
     {
+      key: "new",
       type: "Nova",
-      title: "Melhor preco - peca nova",
-      query: `${base} nova original paralela comprar`,
-      chips: ["Nova", clean(els.partCode.value) || "Codigo a confirmar", "Compra imediata"]
+      title: "Peca nova confirmada",
+      query: `${base} nova original paralela`,
+      chips: ["Nova", clean(els.partCode.value) || "Codigo a confirmar", "Anuncio confirmado"]
     },
     {
+      key: "used",
       type: "Usada",
-      title: "Melhor preco - peca usada",
-      query: `${base} usada desmanche semi nova comprar`,
-      chips: ["Usada", clean(els.partCode.value) || "Codigo a confirmar", "Menor custo"]
+      title: "Peca usada confirmada",
+      query: `${base} usada desmanche semi nova`,
+      chips: ["Usada", clean(els.partCode.value) || "Codigo a confirmar", "Existe anuncio"]
     },
     {
+      key: "reman",
       type: "Remanufaturada",
-      title: "Melhor preco - remanufaturada",
-      query: `${base} remanufaturada recuperada recondicionada comprar`,
-      chips: ["Remanufaturada", clean(els.partCode.value) || "Codigo a confirmar", "Garantia/recuperada"]
+      title: "Remanufaturada confirmada",
+      query: `${base} remanufaturada recuperada recondicionada`,
+      chips: ["Remanufaturada", clean(els.partCode.value) || "Codigo a confirmar", "Existe anuncio"]
     }
   ];
+
+  const cards = await findConfirmedCards(cardRequests);
+
+  if (!cards.length) {
+    renderEmptyResults("Nao encontrei anuncio confirmado com preco para essa peca. Confira o codigo ou informe marca/maquina.");
+    return;
+  }
 
   cards.forEach(card => {
     const node = els.resultTemplate.content.cloneNode(true);
     node.querySelector(".result-type").textContent = card.type;
     node.querySelector("h3").textContent = card.title;
     node.querySelector(".result-desc").innerHTML = `
-      <strong>${escapeHtml(card.query)}</strong>
+      <strong>${escapeHtml(card.offers.length)} anuncio(s) encontrado(s) com preco</strong>
       <div class="match-row">
         <div class="match-chip"><span>Tipo</span><strong>${escapeHtml(card.chips[0])}</strong></div>
         <div class="match-chip"><span>Codigo</span><strong>${escapeHtml(card.chips[1])}</strong></div>
         <div class="match-chip"><span>Foco</span><strong>${escapeHtml(card.chips[2])}</strong></div>
+      </div>
+      <div class="offer-list">
+        ${card.offers.map(offer => `
+          <a href="${escapeHtml(offer.url)}" target="_blank" rel="noopener" class="offer-row">
+            <span>${escapeHtml(offer.title)}</span>
+            <strong>${formatCurrency(offer.price)}</strong>
+          </a>
+        `).join("")}
       </div>
     `;
 
@@ -420,14 +469,118 @@ function renderPurchaseCards() {
   });
 }
 
+async function findConfirmedCards(cardRequests) {
+  const responses = await Promise.all(cardRequests.map(async card => {
+    const offers = await searchMarketplace(card.query);
+    return {
+      ...card,
+      offers: filterOffersByCategory(offers, card.key).slice(0, 3)
+    };
+  }));
+
+  return responses.filter(card => card.offers.length);
+}
+
+async function searchMarketplace(query) {
+  try {
+    const url = `${MARKETPLACE_API}?q=${encodeURIComponent(query)}&limit=30`;
+    const response = await fetch(url);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return (data.results || [])
+      .map(item => ({
+        title: item.title || "",
+        price: Number(item.price || 0),
+        url: item.permalink || "",
+        condition: item.condition || ""
+      }))
+      .filter(offer => offer.title && offer.price > 0 && offer.url);
+  } catch {
+    return [];
+  }
+}
+
+function filterOffersByCategory(offers, categoryKey) {
+  return offers
+    .map(offer => ({ ...offer, score: scoreOfferMatch(offer, categoryKey) }))
+    .filter(offer => offer.score >= minimumOfferScore())
+    .sort((a, b) => {
+      if (a.price !== b.price) return a.price - b.price;
+      return b.score - a.score;
+    });
+}
+
+function scoreOfferMatch(offer, categoryKey) {
+  const title = normalizeText(offer.title);
+  const titleCompact = compactText(offer.title);
+  const code = compactText(els.partCode.value);
+  const terms = buildRelevanceTerms();
+  let score = 0;
+
+  if (code.length >= 5 && titleCompact.includes(code)) score += 70;
+  if (code.length >= 5 && !titleCompact.includes(code)) score -= 35;
+
+  terms.forEach(term => {
+    if (title.includes(term)) score += 12;
+  });
+
+  if (categoryKey === "new") {
+    if (offer.condition === "new") score += 25;
+    if (hasUsedSignal(title) || hasRemanSignal(title)) score -= 80;
+  }
+
+  if (categoryKey === "used") {
+    if (offer.condition === "used" || hasUsedSignal(title)) score += 35;
+    if (!(offer.condition === "used" || hasUsedSignal(title))) score -= 100;
+  }
+
+  if (categoryKey === "reman") {
+    if (hasRemanSignal(title)) score += 45;
+    if (!hasRemanSignal(title)) score -= 100;
+  }
+
+  return score;
+}
+
+function minimumOfferScore() {
+  const code = compactText(els.partCode.value);
+  const terms = buildRelevanceTerms();
+  if (code.length >= 5) return 65;
+  return terms.length >= 2 ? 32 : 50;
+}
+
+function buildRelevanceTerms() {
+  const raw = [
+    clean(els.partName.value),
+    clean(els.brand.value),
+    clean(els.machine.value)
+  ].join(" ");
+
+  const blocked = new Set(["peca", "pecas", "codigo", "original", "paralela", "comprar", "para", "com"]);
+
+  return normalizeText(raw)
+    .split(/\s+/)
+    .filter(word => word.length >= 3)
+    .filter(word => !blocked.has(word))
+    .slice(0, 8);
+}
+
+function hasUsedSignal(text) {
+  return /(usad|semi\s?nov|desmanch|retirad|sucata|segunda mao)/.test(text);
+}
+
+function hasRemanSignal(text) {
+  return /(reman|remanufaturad|recondicionad|recuperad|retificad|revisad)/.test(text);
+}
+
 function buildPurchaseLinks(query, type) {
   const encoded = encodeURIComponent(query);
   const marketplaceSlug = slugForMarketplace(query);
   const links = [
-    { label: "Ver ofertas", url: `https://www.google.com/search?tbm=shop&q=${encoded}` },
-    { label: "Comparar precos", url: `https://www.google.com/search?q=${encoded}` },
-    { label: "Opcoes de compra", url: `https://lista.mercadolivre.com.br/${marketplaceSlug}` },
-    { label: "Mais ofertas", url: `https://shopee.com.br/search?keyword=${encoded}` }
+    { label: "Buscar mais ofertas", url: `https://www.google.com/search?tbm=shop&q=${encoded}` },
+    { label: "Comparar na internet", url: `https://www.google.com/search?q=${encoded}` },
+    { label: "Ver lista completa", url: `https://lista.mercadolivre.com.br/${marketplaceSlug}` },
+    { label: "Procurar em lojas", url: `https://shopee.com.br/search?keyword=${encoded}` }
   ];
 
   if (type === "Usada") {
@@ -435,6 +588,24 @@ function buildPurchaseLinks(query, type) {
   }
 
   return links;
+}
+
+function formatCurrency(value) {
+  return Number(value || 0).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL"
+  });
+}
+
+function normalizeText(value) {
+  return clean(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
+function compactText(value) {
+  return normalizeText(value).replace(/[^a-z0-9]/g, "");
 }
 
 function slugForMarketplace(value) {

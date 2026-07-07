@@ -1,6 +1,6 @@
 # Radar Pecas
 
-Versao: v1.4.0-funcional
+Versao: v1.5.0-verificado
 
 ## Como testar
 
@@ -18,10 +18,8 @@ Versao: v1.4.0-funcional
 - Segunda leitura automatica com contraste alto para melhorar codigo em etiqueta.
 - Tentativa de leitura de codigo de barras quando o navegador suporta.
 - Campos manuais para corrigir a busca.
-- Links reais de compra/pesquisa para:
-  - peca nova;
-  - peca usada;
-  - remanufaturada.
+- Consulta anuncios reais com preco e link.
+- Peca usada e remanufaturada so aparecem quando houver anuncio compativel encontrado.
 - Versao visivel na tela.
 - Botao para copiar pedido de cotacao.
 
