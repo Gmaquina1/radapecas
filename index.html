@@ -41,8 +41,8 @@
         <div class="preview-wrap is-hidden" id="previewWrap">
           <canvas id="previewCanvas"></canvas>
           <div class="preview-actions">
-            <button class="primary-btn" id="runOcrBtn" type="button">Ler codigo da foto</button>
-            <button class="primary-btn gold-btn" id="analyzeAiBtn" type="button">IA sem chave</button>
+            <button class="primary-btn" id="runOcrBtn" type="button">Reconhecer foto</button>
+            <button class="primary-btn gold-btn is-hidden" id="analyzeAiBtn" type="button">IA sem chave</button>
             <button class="secondary-btn" id="enhanceBtn" type="button">Melhorar contraste</button>
           </div>
         </div>
@@ -100,7 +100,7 @@
         </div>
 
         <div class="button-row">
-          <button class="primary-btn" type="submit">Montar buscas</button>
+          <button class="primary-btn" type="submit">Buscar peca</button>
           <button class="secondary-btn" id="copyRequestBtn" type="button">Copiar pedido</button>
         </div>
       </form>
@@ -109,10 +109,10 @@
     <section class="ai-demo-section">
       <div class="section-title">
         <div>
-          <p class="eyebrow">Modo apresentacao</p>
-          <h2>Analise IA sem chave</h2>
+          <p class="eyebrow">Identificacao</p>
+          <h2>Analise da peca</h2>
         </div>
-        <span class="free-pill">Roda no navegador</span>
+        <span class="free-pill">Ativo</span>
       </div>
 
       <div class="ai-grid">
@@ -187,7 +187,7 @@
         <h3></h3>
         <p class="result-desc"></p>
       </div>
-      <button class="quote-btn" type="button">Solicitar cotacao</button>
+      <div class="buy-links"></div>
     </article>
   </template>
 

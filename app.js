@@ -155,18 +155,21 @@ function loadImage(file) {
       state.enhanced = false;
       els.previewWrap.classList.remove("is-hidden");
       drawImageToCanvas();
-      setProgress("Foto recebida. Buscando fornecedores...", 35);
-      if (!clean(els.partName.value)) {
-        els.partName.value = "peca de maquina pesada";
-      }
-      renderPhotoDemo();
-      buildSearch(true);
+      setProgress("Foto carregada. Clique em Reconhecer foto.", 20);
+      renderWaitingPhoto();
       tryBarcodeScan();
-      runFreeAiAnalysis();
     };
     img.src = reader.result;
   };
   reader.readAsDataURL(file);
+}
+
+function renderWaitingPhoto() {
+  els.aiPartType.textContent = "Foto carregada";
+  els.aiSummary.textContent = "Clique em Reconhecer foto para ler codigo e montar links de compra.";
+  els.confidenceText.textContent = "0%";
+  els.confidenceBar.style.width = "0%";
+  els.aiTags.innerHTML = "";
 }
 
 function drawImageToCanvas() {
@@ -217,21 +220,22 @@ async function runRecognition() {
     return;
   }
 
-  setProgress("Preparando OCR...", 15);
+  setProgress("Reconhecendo foto...", 15);
 
   try {
     await ensureTesseract();
   } catch {
-    setProgress("OCR online indisponivel. Digite o codigo manualmente.", 0);
+    setProgress("Nao carregou o leitor. Preencha os dados e clique em buscar.", 0);
     return;
   }
 
+  let foundCode = "";
   try {
     const result = await Tesseract.recognize(els.canvas, "eng", {
       logger: message => {
         if (message.status === "recognizing text") {
           const pct = Math.round((message.progress || 0) * 100);
-          setProgress("Lendo texto da foto...", pct);
+          setProgress("Lendo codigo da foto...", pct);
         }
       }
     });
@@ -241,14 +245,76 @@ async function runRecognition() {
     if (candidates.length) {
       addCandidates(candidates, "Codigos sugeridos pelo OCR");
       els.partCode.value = candidates[0];
-      buildSearch();
-      setProgress("Codigo sugerido. Confira antes de comprar.", 100);
+      foundCode = candidates[0];
     } else {
-      setProgress("Nao encontrei codigo claro. Tente melhorar contraste ou digitar manualmente.", 35);
+      addCandidates(["sem codigo claro"], "Resultado da leitura");
     }
   } catch {
-    setProgress("Nao foi possivel ler esta foto. Tente outra imagem.", 0);
+    addCandidates(["sem codigo claro"], "Resultado da leitura");
   }
+
+  await recognizeVisualContext();
+  const query = buildSearchQueryForPurchase();
+  renderPurchaseReady(foundCode, query);
+  buildSearch(true);
+  setProgress("Links de compra prontos.", 100);
+}
+
+async function recognizeVisualContext() {
+  let labels = [];
+  try {
+    await ensureFreeVisionModel();
+    labels = await state.visionModel.classify(els.canvas);
+    state.aiLabels = labels;
+  } catch {
+    labels = [];
+    state.aiLabels = [];
+  }
+
+  const analysis = buildFreeAiReport(labels);
+  applyAnalysisToSearch(analysis);
+  renderFreeAiReport(analysis);
+}
+
+function buildSearchQueryForPurchase(condition = "") {
+  if (!hasMinimumSearchData()) return "";
+
+  const pieces = [
+    clean(els.partCode.value),
+    clean(els.partName.value),
+    clean(els.brand.value),
+    clean(els.machine.value),
+    condition,
+    "peca"
+  ];
+
+  return pieces.filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
+}
+
+function hasMinimumSearchData() {
+  return Boolean(
+    clean(els.partCode.value) ||
+    clean(els.partName.value) ||
+    clean(els.brand.value) ||
+    clean(els.machine.value)
+  );
+}
+
+function renderPurchaseReady(code, query) {
+  const part = clean(els.partName.value) || "Peca identificada";
+  els.aiPartType.textContent = part;
+  els.aiSummary.textContent = code
+    ? `Codigo reconhecido: ${code}. Links montados para compra.`
+    : `Codigo nao confirmado. Links montados com os dados disponiveis.`;
+  els.confidenceText.textContent = code ? "82%" : "55%";
+  els.confidenceBar.style.width = code ? "82%" : "55%";
+  els.aiTags.innerHTML = "";
+  [query || "busca por imagem", code ? `codigo ${code}` : "sem codigo", "nova / usada / remanufaturada"].forEach(tag => {
+    const span = document.createElement("span");
+    span.className = "ai-tag";
+    span.textContent = tag;
+    els.aiTags.appendChild(span);
+  });
 }
 
 function ensureTesseract() {
@@ -501,17 +567,17 @@ function makeQuery() {
     els.brand.value,
     els.machine.value,
     els.partType.value,
-    "peca",
-    "autopecas",
     els.location.value
   ];
 
-  return pieces
+  const base = pieces
     .map(clean)
     .filter(Boolean)
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
+
+  return base ? `${base} peca autopecas` : "";
 }
 
 function updateQueryPreview() {
@@ -538,7 +604,15 @@ function renderResults() {
     node.querySelector(".result-type").textContent = card.type;
     node.querySelector("h3").textContent = card.title;
     node.querySelector(".result-desc").innerHTML = card.description;
-    node.querySelector(".quote-btn").addEventListener("click", () => copySupplierRequest(card));
+    const linksWrap = node.querySelector(".buy-links");
+    (card.links || []).forEach(link => {
+      const anchor = document.createElement("a");
+      anchor.href = link.url;
+      anchor.target = "_blank";
+      anchor.rel = "noopener";
+      anchor.textContent = link.label;
+      linksWrap.appendChild(anchor);
+    });
     els.resultsGrid.appendChild(node);
   });
 }
@@ -555,39 +629,64 @@ function buildResultCards(query) {
     ];
   }
 
-  const matches = matchLocalCatalog(query);
-  return buildBestPriceCards(query, matches[0]);
+  return buildPurchaseCards();
 }
 
-function buildBestPriceCards(query, match) {
-  const baseSeed = query.length || 21;
+function buildPurchaseCards() {
+  if (!hasMinimumSearchData()) {
+    return [{
+      type: "Dados insuficientes",
+      title: "Nao foi possivel montar links confiaveis",
+      description: "Informe codigo, nome da peca, marca ou maquina para buscar ofertas reais.",
+      links: []
+    }];
+  }
+
   const options = [
-    { label: "Peca nova", type: "Melhor preco", multiplier: 1, supplier: match.suppliers[0], origin: "Fornecedor nacional", deadline: "Hoje" },
-    { label: "Peca usada", type: "Melhor preco", multiplier: 0.46, supplier: match.suppliers[1] || match.suppliers[0], origin: "Estoque usado", deadline: "1 a 2 dias" },
-    { label: "Remanufaturada", type: "Melhor preco", multiplier: 0.68, supplier: match.suppliers[2] || match.suppliers[0], origin: "Remanufatura", deadline: "2 a 4 dias" }
+    { label: "Peca nova", type: "Nova", condition: "nova original paralela comprar" },
+    { label: "Peca usada", type: "Usada", condition: "usada desmanche semi nova comprar" },
+    { label: "Remanufaturada", type: "Remanufaturada", condition: "remanufaturada recuperada recondicionada comprar" }
   ];
 
   return options.map((option, index) => {
-    const rawPrice = estimatePrice(match.price, baseSeed + index * 17) * option.multiplier;
-    const price = Math.round(rawPrice / 10) * 10;
+    const query = buildSearchQueryForPurchase(option.condition);
+    const fallback = query;
     return {
-      type: option.type,
+      type: `Compra ${option.type}`,
       title: option.label,
       description: `
-        <strong>${escapeHtml(match.title)}</strong>
+        <strong>${escapeHtml(fallback)}</strong>
         <div class="match-row">
-          <div class="match-chip"><span>Origem</span><strong>${escapeHtml(option.origin)}</strong></div>
-          <div class="match-chip"><span>Valor</span><strong>${formatMoney(price)}</strong></div>
-          <div class="match-chip"><span>Prazo</span><strong>${option.deadline}</strong></div>
+          <div class="match-chip"><span>Tipo</span><strong>${escapeHtml(option.type)}</strong></div>
+          <div class="match-chip"><span>Codigo</span><strong>${escapeHtml(clean(els.partCode.value) || "A confirmar")}</strong></div>
+          <div class="match-chip"><span>Busca</span><strong>Pronta</strong></div>
         </div>
       `,
-      supplier: option.supplier,
-      part: `${match.title} - ${option.label}`,
-      price,
-      deadline: option.deadline,
-      score: Math.max(70, match.score - index * 3)
+      links: buildPurchaseLinks(fallback, option.type)
     };
   });
+}
+
+function buildPurchaseLinks(query, type) {
+  const encoded = encodeURIComponent(query);
+  const googleShopping = `https://www.google.com/search?tbm=shop&q=${encoded}`;
+  const google = `https://www.google.com/search?q=${encoded}`;
+  const mercadoLivre = `https://lista.mercadolivre.com.br/${encoded}`;
+  const olx = `https://www.olx.com.br/brasil?q=${encoded}`;
+  const shopee = `https://shopee.com.br/search?keyword=${encoded}`;
+
+  const links = [
+    { label: "Ver ofertas", url: googleShopping },
+    { label: "Comparar precos", url: google },
+    { label: "Opcoes de compra", url: mercadoLivre },
+    { label: "Mais ofertas", url: shopee }
+  ];
+
+  if (type === "Usada") {
+    links.splice(2, 0, { label: "Usados proximos", url: olx });
+  }
+
+  return links;
 }
 
 function matchLocalCatalog(query) {
